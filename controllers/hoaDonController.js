@@ -153,11 +153,13 @@ exports.getAllHoaDonAdmin = async (req, res) => {
       .populate("nhaKhoa", "hoVaTen tinh")
       .populate({
         path: "danhSachDonHang.donHang",
-        select: "_id",
-        populate: {
-          path: "danhSachSanPham.sanPham",
-          select: "tenSanPham",
-        },
+        select: "_id nhaKhoa bacSi benhNhan danhSachSanPham ngayNhan yeuCauHoanThanh henGiao",
+        populate: [
+          { path: "bacSi", select: "hoVaTen" },
+          { path: "benhNhan", select: "hoVaTen" },
+          { path: "nhaKhoa", select: "hoVaTen" },
+          { path: "danhSachSanPham.sanPham", select: "tenSanPham donGiaChung" },
+        ],
       })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -196,7 +198,13 @@ exports.getAllHoaDon = async (req, res) => {
       .populate("nhaKhoa", "tenNhaKhoa")
       .populate({
         path: "danhSachDonHang.donHang",
-        populate: { path: "nguoiLienHe", select: "hoVaTen" }
+        select: "_id nhaKhoa bacSi benhNhan danhSachSanPham ngayNhan yeuCauHoanThanh henGiao",
+        populate: [
+          { path: "bacSi", select: "hoVaTen" },
+          { path: "benhNhan", select: "hoVaTen" },
+          { path: "nhaKhoa", select: "hoVaTen" },
+          { path: "danhSachSanPham.sanPham", select: "tenSanPham donGiaChung" },
+        ],
       })
       .sort({ createdAt: -1 });
 

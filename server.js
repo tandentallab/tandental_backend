@@ -1,5 +1,6 @@
 require("dotenv").config();
 const express = require("express");
+const path = require("path");
 const cors = require("cors");
 
 const connectDB = require("./config/db.config");
@@ -26,6 +27,11 @@ app.use(express.json());
 // test
 app.get("/", (req, res) => {
   res.send("API OK");
+});
+
+// Serve logo for Excel export
+app.get("/assets/logo.png", (req, res) => {
+  res.sendFile(path.join(__dirname, "Picture1.png"));
 });
 
 const PORT = process.env.PORT || 3000;
