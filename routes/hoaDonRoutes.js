@@ -16,6 +16,8 @@ router.post("/", hoaDonController.createHoaDon);
 // Lấy danh sách hóa đơn theo nha khoa
 router.get("/nha-khoa/:nhaKhoaId", hoaDonController.getAllHoaDon);
 
+router.get("/:id", hoaDonController.getHoaDonById);
+
 // Lấy đơn hàng chưa xuất hóa đơn
 router.get(
   "/don-hang-chua-xuat/:nhaKhoaId",
