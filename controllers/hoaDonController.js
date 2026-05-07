@@ -1,7 +1,7 @@
 const HoaDon = require("../models/HoaDon");
 const DonHang = require("../models/DonHang");
 const BangGia = require("../models/bangGia");
-const SanPham = require("../models/sanPham");
+const SanPham = require("../models/SanPham");
 
 //Lấy danh sách đơn hàng chưa xuất hóa đơn
 exports.getDonHangChuaXuatHoaDon = async (req, res) => {
@@ -190,7 +190,7 @@ exports.getAllHoaDon = async (req, res) => {
     }
 
     // Tìm kiếm theo số hóa đơn nếu có
-   
+
 
     const danhSachHoaDon = await HoaDon.find(query)
       .populate("nhaKhoa", "tenNhaKhoa")

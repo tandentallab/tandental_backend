@@ -1,5 +1,5 @@
 const BangGia = require("../models/bangGia");
-const SanPham = require("../models/sanPham");
+const SanPham = require("../models/SanPham");
 
 /* ================= UPSERT ================= */
 // tạo hoặc cập nhật giá

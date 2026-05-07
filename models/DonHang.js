@@ -107,4 +107,7 @@ const donHangSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
+// Thêm dòng này để tăng tốc độ truy vấn theo ngày tháng và trạng thái
+donHangSchema.index({ createdAt: -1, trangThai: 1 });
+
 module.exports = mongoose.model("DonHang", donHangSchema);
