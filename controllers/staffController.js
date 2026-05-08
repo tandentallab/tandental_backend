@@ -214,7 +214,7 @@ exports.updateStaff = async (req, res) => {
         return res.status(400).json({ message: "Email không hợp lệ" });
       }
 
-      const emailExist = await Staff.findOne({ 
+      const emailExist = await Staff.findOne({
         Email: req.body.Email.toLowerCase(),
         _id: { $ne: req.params.id }
       });
@@ -227,7 +227,7 @@ exports.updateStaff = async (req, res) => {
 
     // Nếu cập nhật MSNV, kiểm tra tính hợp lệ
     if (req.body.MSNV && req.body.MSNV !== staff.MSNV) {
-      const msNvExist = await Staff.findOne({ 
+      const msNvExist = await Staff.findOne({
         MSNV: req.body.MSNV,
         _id: { $ne: req.params.id }
       });
@@ -244,11 +244,10 @@ exports.updateStaff = async (req, res) => {
     }
 
     await staff.save();
-
     // Populate quyenSuDung trước khi trả về
     const updatedStaff = await Staff.findById(staff._id).populate("quyenSuDung");
 
-    res.json({ 
+    res.json({
       message: "Cập nhật thành công",
       staff: {
         _id: updatedStaff._id,
