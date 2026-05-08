@@ -13,6 +13,12 @@ router.get("/all", hoaDonController.getAllHoaDonAdmin);
 // Tạo hóa đơn mới
 router.post("/", hoaDonController.createHoaDon);
 
+// Lấy hóa đơn chưa thanh toán theo nha khoa (dùng cho modal phiếu thu)
+router.get(
+  "/chua-thanh-toan/:nhaKhoaId",
+  hoaDonController.getHoaDonChuaThanhToanByNhaKhoa
+);
+
 // Lấy danh sách hóa đơn theo nha khoa
 router.get("/nha-khoa/:nhaKhoaId", hoaDonController.getAllHoaDon);
 

@@ -153,18 +153,18 @@ exports.createHoaDon = async (req, res) => {
     await hoaDon.save();
 
     // 🔥 Cập nhật trạng thái đơn hàng
-await DonHang.updateMany(
-  {
-    _id: {
-      $in: resultDonHang.map((i) => i.donHang),
-    },
-  },
-  {
-    $set: {
-      daXuatHoaDon: true,
-    },
-  }
-);
+    await DonHang.updateMany(
+      {
+        _id: {
+          $in: resultDonHang.map((i) => i.donHang),
+        },
+      },
+      {
+        $set: {
+          daXuatHoaDon: true,
+        },
+      }
+    );
 
     res.json({
       success: true,
@@ -504,12 +504,12 @@ exports.updateHoaDon = async (req, res) => {
         );
 
       // 👉 Danh sách mới
-     const newIds =
-  danhSachDonHang.map((i) =>
-    typeof i.donHang === "object"
-      ? i.donHang._id.toString()
-      : i.donHang.toString()
-  );
+      const newIds =
+        danhSachDonHang.map((i) =>
+          typeof i.donHang === "object"
+            ? i.donHang._id.toString()
+            : i.donHang.toString()
+        );
 
       // 🔥 Đơn bị remove
       const removedIds = oldIds.filter(
@@ -531,7 +531,7 @@ exports.updateHoaDon = async (req, res) => {
           }
         );
       }
-      
+
       //🔥 Set lại các đơn hiện tại thành đã xuất hóa đơn
       await DonHang.updateMany(
         {
@@ -578,7 +578,7 @@ exports.updateHoaDon = async (req, res) => {
           hoaDon.chiPhiKhac || 0
         );
 
-      hoaDon.thanhTien += hoaDon.thanhTien*(hoaDon.thue/100)
+      hoaDon.thanhTien += hoaDon.thanhTien * (hoaDon.thue / 100)
 
       hoaDon.conLai =
         hoaDon.thanhTien -
@@ -756,5 +756,23 @@ exports.deleteHoaDon = async (
       success: false,
       message: err.message,
     });
+  }
+};
+
+// ================= LẤY HÓA ĐƠN CHƯA THANH TOÁN THEO NHA KHOA =================
+exports.getHoaDonChuaThanhToanByNhaKhoa = async (req, res) => {
+  try {
+    const { nhaKhoaId } = req.params;
+
+    const danhSach = await HoaDon.find({
+      nhaKhoa: nhaKhoaId,
+      trangThai: { $in: ["Chưa thanh toán", "Thanh toán một phần"] },
+    })
+      .select("_id ngayXuatHoaDon thanhTien daThanhToan conLai trangThai")
+      .sort({ ngayXuatHoaDon: -1 });
+
+    res.json({ success: true, data: danhSach });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
