@@ -10,7 +10,7 @@ exports.upsertBangGia = async (req, res) => {
     const data = await BangGia.findOneAndUpdate(
       { nhaKhoaId, sanPhamId },
       { donGia, ghiChu },
-      { new: true, upsert: true }
+      { returnDocument: "after", upsert: true }
     );
 
     res.json(data);

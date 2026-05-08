@@ -1,6 +1,90 @@
 const PhieuThu = require("../models/PhieuThu");
 const HoaDon = require("../models/HoaDon");
 
+/* ================= LẤY DANH SÁCH PHIẾU THU ================= */
+exports.getAllPhieuThu = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const { search } = req.query;
+
+    let matchQuery = {};
+
+    if (search && search.trim() !== "") {
+      const keyword = search.trim();
+      matchQuery.$or = [
+        { soPhieuThu: { $regex: keyword, $options: "i" } },
+      ];
+    }
+
+    // Cần aggregate để search theo tên nha khoa
+    const pipeline = [
+      {
+        $lookup: {
+          from: "hoadons",
+          localField: "hoaDon",
+          foreignField: "_id",
+          as: "hoaDonInfo",
+        },
+      },
+      { $unwind: { path: "$hoaDonInfo", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "nhakhoas",
+          localField: "hoaDonInfo.nhaKhoa",
+          foreignField: "_id",
+          as: "nhaKhoaInfo",
+        },
+      },
+      { $unwind: { path: "$nhaKhoaInfo", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "staffs",
+          localField: "nguoiTao",
+          foreignField: "_id",
+          as: "nguoiTaoInfo",
+        },
+      },
+      { $unwind: { path: "$nguoiTaoInfo", preserveNullAndEmptyArrays: true } },
+    ];
+
+    if (search && search.trim() !== "") {
+      const keyword = search.trim();
+      pipeline.push({
+        $match: {
+          $or: [
+            { soPhieuThu: { $regex: keyword, $options: "i" } },
+            { "nhaKhoaInfo.hoVaTen": { $regex: keyword, $options: "i" } },
+          ],
+        },
+      });
+    }
+
+    pipeline.push({ $sort: { createdAt: -1 } });
+
+    const countPipeline = [...pipeline, { $count: "total" }];
+    const dataPipeline = [...pipeline, { $skip: skip }, { $limit: limit }];
+
+    const [countResult, data] = await Promise.all([
+      PhieuThu.aggregate(countPipeline),
+      PhieuThu.aggregate(dataPipeline),
+    ]);
+
+    const total = countResult[0]?.total || 0;
+
+    res.json({
+      success: true,
+      total,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      data,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 /* ================= TẠO PHIẾU THU ================= */
 exports.createPhieuThu = async (req, res) => {
   try {
@@ -45,8 +129,15 @@ exports.createPhieuThu = async (req, res) => {
 
     let duocKhauTru = soTienThu - conThua
 
+    // Generate soPhieuThu
+    const count = await PhieuThu.countDocuments();
+    const year = new Date().getFullYear();
+    const soPhieuThu = `PT${year}${String(count + 1).padStart(4, "0")}`;
+
     const phieuThu = await PhieuThu.create({
+      soPhieuThu,
       hoaDon,
+      nguoiTao: req.user?.id || req.user?._id || null,
       ngayThu,
       soTienThu,
       duocKhauTru,
@@ -61,6 +152,28 @@ exports.createPhieuThu = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+/* ================= CẬP NHẬT PHIẾU THU ================= */
+exports.updatePhieuThu = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { ngayThu, phuongThucThanhToan, noiDung } = req.body;
+
+    const phieuThu = await PhieuThu.findById(id);
+    if (!phieuThu) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy phiếu thu" });
+    }
+
+    if (ngayThu !== undefined) phieuThu.ngayThu = ngayThu;
+    if (phuongThucThanhToan !== undefined) phieuThu.phuongThucThanhToan = phuongThucThanhToan;
+    if (noiDung !== undefined) phieuThu.noiDung = noiDung;
+
+    await phieuThu.save();
+    res.json({ success: true, data: phieuThu });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 

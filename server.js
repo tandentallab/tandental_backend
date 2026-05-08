@@ -1,5 +1,6 @@
 require("dotenv").config();
 const express = require("express");
+const path = require("path");
 const cors = require("cors");
 
 const connectDB = require("./config/db.config");
@@ -17,7 +18,9 @@ const hoaDonRoutes = require("./routes/hoaDonRoutes");
 const quyenSuDungRoutes = require("./routes/quyenSuDungRoutes");
 const congTyRoutes = require("./routes/congTyRoutes");
 const nhaCungCapRoutes = require("./routes/nhaCungCapRoutes");
+const phieuBaoHanhRoutes = require("./routes/phieuBaoHanhRoutes");
 const baoCaoRoutes = require('./routes/baoCaoRoutes'); // Đường dẫn tới file route
+const phieuThuRoutes = require("./routes/phieuThuRoutes");
 const app = express();
 
 app.use(cors());
@@ -26,6 +29,11 @@ app.use(express.json());
 // test
 app.get("/", (req, res) => {
   res.send("API OK");
+});
+
+// Serve logo for Excel export
+app.get("/assets/logo.png", (req, res) => {
+  res.sendFile(path.join(__dirname, "Picture1.png"));
 });
 
 const PORT = process.env.PORT || 3000;
@@ -48,7 +56,9 @@ const startServer = async () => {
     app.use("/api/quyen-su-dung", quyenSuDungRoutes);
     app.use("/api/cong-ty", congTyRoutes);
     app.use("/api/nha-cung-cap", nhaCungCapRoutes);
+    app.use("/api/phieu-bao-hanh", phieuBaoHanhRoutes);
     app.use("/api/baocao", baoCaoRoutes);
+    app.use("/api/phieu-thu", phieuThuRoutes);
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
