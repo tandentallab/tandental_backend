@@ -94,6 +94,7 @@ exports.createPhieuThu = async (req, res) => {
       soTienThu,
       noiDung,
       phuongThucThanhToan,
+      nguoiTao,
     } = req.body;
 
     const hd = await HoaDon.findById(hoaDon);
