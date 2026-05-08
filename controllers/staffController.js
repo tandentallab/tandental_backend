@@ -18,10 +18,42 @@ const generateToken = (staff) => {
   );
 };
 
+// 👤 Lấy thông tin user hiện tại (từ token)
+exports.getCurrentStaff = async (req, res) => {
+  try {
+    // req.user được set bởi middleware authMiddleware
+    const staff = await Staff.findById(req.user.id)
+      .select("-Password")
+      .populate("quyenSuDung");
+
+    if (!staff) {
+      return res.status(404).json({ message: "Nhân viên không tồn tại" });
+    }
+
+    res.json({
+      message: "Lấy thông tin user thành công",
+      staff: {
+        id: staff._id,
+        MSNV: staff.MSNV,
+        HoTenNV: staff.HoTenNV,
+        Email: staff.Email,
+        ChucVu: staff.ChucVu,
+        quyenSuDung: staff.quyenSuDung,
+        DienThoai: staff.DienThoai,
+        DiaChi: staff.DiaChi,
+        GioiThieu: staff.GioiThieu,
+        Status: staff.Status,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // ✅ Tạo nhân viên (Admin tạo trực tiếp)
 exports.createStaff = async (req, res) => {
   try {
-    const { HoTenNV, Email, Password, ChucVu, Permissions, Status, MSNV } = req.body;
+    const { HoTenNV, Email, Password, ChucVu, Permissions, Status, MSNV, quyenSuDung, DienThoai, DiaChi, GioiThieu } = req.body;
 
     // Kiểm tra Email bắt buộc
     if (!Email) {
@@ -65,23 +97,32 @@ exports.createStaff = async (req, res) => {
       Email: Email.toLowerCase(),
       Password,
       ChucVu: ChucVu || "Thành viên",
-      Permissions: Permissions || "",
+      quyenSuDung: quyenSuDung || null,
+      DienThoai: DienThoai || "",
+      DiaChi: DiaChi || "",
+      GioiThieu: GioiThieu || "",
       Status: Status !== undefined ? Status : 1,
     });
 
     await newStaff.save();
 
+    // Populate quyenSuDung trước khi trả về
+    const staffWithQuyens = await Staff.findById(newStaff._id).populate("quyenSuDung");
+
     res.status(201).json({
       message: "Tạo nhân viên thành công",
       staff: {
-        id: newStaff._id,
-        MSNV: newStaff.MSNV,
-        HoTenNV: newStaff.HoTenNV,
-        Email: newStaff.Email,
-        ChucVu: newStaff.ChucVu,
-        Status: newStaff.Status,
-        Permissions: newStaff.Permissions,
-        createdAt: newStaff.createdAt,
+        _id: staffWithQuyens._id,
+        MSNV: staffWithQuyens.MSNV,
+        HoTenNV: staffWithQuyens.HoTenNV,
+        Email: staffWithQuyens.Email,
+        ChucVu: staffWithQuyens.ChucVu,
+        quyenSuDung: staffWithQuyens.quyenSuDung,
+        DienThoai: staffWithQuyens.DienThoai,
+        DiaChi: staffWithQuyens.DiaChi,
+        GioiThieu: staffWithQuyens.GioiThieu,
+        Status: staffWithQuyens.Status,
+        createdAt: staffWithQuyens.createdAt,
       },
     });
   } catch (err) {
@@ -137,7 +178,7 @@ exports.loginStaff = async (req, res) => {
 // 📋 Lấy danh sách nhân viên
 exports.getAllStaff = async (req, res) => {
   try {
-    const staffs = await Staff.find().select("-Password");
+    const staffs = await Staff.find().select("-Password").populate("quyenSuDung");
     res.json(staffs);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -147,7 +188,7 @@ exports.getAllStaff = async (req, res) => {
 // 🔍 Lấy 1 nhân viên
 exports.getStaffById = async (req, res) => {
   try {
-    const staff = await Staff.findById(req.params.id).select("-Password");
+    const staff = await Staff.findById(req.params.id).select("-Password").populate("quyenSuDung");
     if (!staff) {
       return res.status(404).json({ message: "Không tìm thấy" });
     }
@@ -203,18 +244,24 @@ exports.updateStaff = async (req, res) => {
     }
 
     await staff.save();
+    // Populate quyenSuDung trước khi trả về
+    const updatedStaff = await Staff.findById(staff._id).populate("quyenSuDung");
 
     res.json({
       message: "Cập nhật thành công",
       staff: {
-        id: staff._id,
-        MSNV: staff.MSNV,
-        HoTenNV: staff.HoTenNV,
-        Email: staff.Email,
-        ChucVu: staff.ChucVu,
-        Status: staff.Status,
-        Permissions: staff.Permissions,
-        updatedAt: staff.updatedAt,
+        _id: updatedStaff._id,
+        MSNV: updatedStaff.MSNV,
+        HoTenNV: updatedStaff.HoTenNV,
+        Email: updatedStaff.Email,
+        ChucVu: updatedStaff.ChucVu,
+        quyenSuDung: updatedStaff.quyenSuDung,
+        DienThoai: updatedStaff.DienThoai,
+        DiaChi: updatedStaff.DiaChi,
+        GioiThieu: updatedStaff.GioiThieu,
+        Status: updatedStaff.Status,
+        createdAt: updatedStaff.createdAt,
+        updatedAt: updatedStaff.updatedAt,
       }
     });
   } catch (err) {

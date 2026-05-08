@@ -63,8 +63,10 @@ exports.getAllDonHang = async (req, res) => {
 exports.getDonHangById = async (req, res) => {
     try {
         const donHang = await DonHang.findById(req.params.id)
-            .populate("nhaKhoa bacSi benhNhan")
-            .populate("danhSachSanPham.sanPham")
+            .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe")
+            .populate("bacSi", "hoVaTen soDienThoai email")
+            .populate("benhNhan", "hoVaTen soHoSo soDienThoai")
+            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh")
             .populate("danhSachSanPham.donHangCu");
 
         if (!donHang) {
@@ -81,8 +83,10 @@ exports.getDonHangById = async (req, res) => {
 exports.updateDonHang = async (req, res) => {
     try {
         const updatedDonHang = await DonHang.findByIdAndUpdate(req.params.id, req.body, { new: true })
-            .populate("nhaKhoa bacSi benhNhan")
-            .populate("danhSachSanPham.sanPham")
+            .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe")
+            .populate("bacSi", "hoVaTen soDienThoai email")
+            .populate("benhNhan", "hoVaTen soHoSo soDienThoai")
+            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh")
             .populate("danhSachSanPham.donHangCu");
 
         if (!updatedDonHang) {

@@ -18,7 +18,14 @@ const staffSchema = new mongoose.Schema(
       enum: ["Sở hữu", "Quản lý", "Thành viên"],
       default: "Thành viên"
     },
+    quyenSuDung: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "QuyenSuDung",
+    },
     Permissions: String,
+    DienThoai: { type: String, default: "" },
+    DiaChi: { type: String, default: "" },
+    GioiThieu: { type: String, default: "" },
     Status: { type: Number, enum: [0, 1], default: 1 }, // 1 = active, 0 = inactive
   },
   { timestamps: true }

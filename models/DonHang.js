@@ -98,6 +98,10 @@ const donHangSchema = new mongoose.Schema(
             type: String,
             enum: ["Chờ xử lý", "Đang sản xuất", "Hoàn thành", "Đã giao"],
             default: "Chờ xử lý",
+        },
+        daXuatHoaDon: {
+            type: Boolean,
+            default: false,
         }
     },
     { timestamps: true }
