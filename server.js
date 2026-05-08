@@ -20,6 +20,7 @@ const congTyRoutes = require("./routes/congTyRoutes");
 const nhaCungCapRoutes = require("./routes/nhaCungCapRoutes");
 const phieuBaoHanhRoutes = require("./routes/phieuBaoHanhRoutes");
 const baoCaoRoutes = require('./routes/baoCaoRoutes'); // Đường dẫn tới file route
+const phieuThuRoutes = require("./routes/phieuThuRoutes");
 const app = express();
 
 app.use(cors());
@@ -57,6 +58,7 @@ const startServer = async () => {
     app.use("/api/nha-cung-cap", nhaCungCapRoutes);
     app.use("/api/phieu-bao-hanh", phieuBaoHanhRoutes);
     app.use("/api/baocao", baoCaoRoutes);
+    app.use("/api/phieu-thu", phieuThuRoutes);
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });

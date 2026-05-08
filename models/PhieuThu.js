@@ -2,10 +2,19 @@ const mongoose = require("mongoose");
 
 const phieuThuSchema = new mongoose.Schema(
   {
+    soPhieuThu: {
+      type: String,
+    },
+
     hoaDon: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "HoaDon",
       required: true,
+    },
+
+    nguoiTao: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Staff",
     },
 
     ngayThu: {
