@@ -1,5 +1,6 @@
 const PhieuThu = require("../models/PhieuThu");
 const HoaDon = require("../models/HoaDon");
+const mongoose = require("mongoose");
 
 /* ================= LẤY DANH SÁCH PHIẾU THU ================= */
 exports.getAllPhieuThu = async (req, res) => {
@@ -7,47 +8,34 @@ exports.getAllPhieuThu = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
-    const { search } = req.query;
+    const { search, nhaKhoaId, dateFrom, dateTo } = req.query;
 
-    let matchQuery = {};
+    const pipeline = [];
 
-    if (search && search.trim() !== "") {
-      const keyword = search.trim();
-      matchQuery.$or = [
-        { soPhieuThu: { $regex: keyword, $options: "i" } },
-      ];
+    // Date range filter
+    if (dateFrom || dateTo) {
+      const dateMatch = {};
+      if (dateFrom) dateMatch.$gte = new Date(dateFrom);
+      if (dateTo) dateMatch.$lte = new Date(dateTo);
+      pipeline.push({ $match: { ngayThu: dateMatch } });
     }
 
-    // Cần aggregate để search theo tên nha khoa
-    const pipeline = [
-      {
-        $lookup: {
-          from: "hoadons",
-          localField: "hoaDon",
-          foreignField: "_id",
-          as: "hoaDonInfo",
-        },
-      },
+    pipeline.push(
+      { $lookup: { from: "hoadons", localField: "hoaDon", foreignField: "_id", as: "hoaDonInfo" } },
       { $unwind: { path: "$hoaDonInfo", preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
-          from: "nhakhoas",
-          localField: "hoaDonInfo.nhaKhoa",
-          foreignField: "_id",
-          as: "nhaKhoaInfo",
-        },
-      },
+      { $lookup: { from: "nhakhoas", localField: "hoaDonInfo.nhaKhoa", foreignField: "_id", as: "nhaKhoaInfo" } },
       { $unwind: { path: "$nhaKhoaInfo", preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
-          from: "staffs",
-          localField: "nguoiTao",
-          foreignField: "_id",
-          as: "nguoiTaoInfo",
-        },
-      },
+    );
+
+    // NhaKhoa filter
+    if (nhaKhoaId) {
+      pipeline.push({ $match: { "nhaKhoaInfo._id": new mongoose.Types.ObjectId(nhaKhoaId) } });
+    }
+
+    pipeline.push(
+      { $lookup: { from: "staffs", localField: "nguoiTao", foreignField: "_id", as: "nguoiTaoInfo" } },
       { $unwind: { path: "$nguoiTaoInfo", preserveNullAndEmptyArrays: true } },
-    ];
+    );
 
     if (search && search.trim() !== "") {
       const keyword = search.trim();
@@ -94,6 +82,7 @@ exports.createPhieuThu = async (req, res) => {
       soTienThu,
       noiDung,
       phuongThucThanhToan,
+      nguoiTao,
     } = req.body;
 
     const hd = await HoaDon.findById(hoaDon);
