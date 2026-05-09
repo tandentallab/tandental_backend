@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 const HoaDon = require("../models/HoaDon");
 const DonHang = require("../models/DonHang");
 const BangGia = require("../models/bangGia");
-const SanPham = require("../models/sanPham");
+const SanPham = require("../models/SanPham");
 
 // ================= LẤY DANH SÁCH ĐƠN HÀNG CHƯA XUẤT HÓA ĐƠN =================
 exports.getDonHangChuaXuatHoaDon = async (req, res) => {
