@@ -18,6 +18,11 @@ router.get(
   "/chua-thanh-toan/:nhaKhoaId",
   hoaDonController.getHoaDonChuaThanhToanByNhaKhoa
 );
+router.get(
+  "/thong-ke-cong-no",
+  hoaDonController.thongKeCongNoHoaDon
+);
+
 
 // Lấy danh sách hóa đơn theo nha khoa
 router.get("/nha-khoa/:nhaKhoaId", hoaDonController.getAllHoaDon);
@@ -37,5 +42,6 @@ router.put("/:id", hoaDonController.updateHoaDon);
 router.post("/:id/thanh-toan", hoaDonController.thanhToanHoaDon);
 
 router.delete("/:id", hoaDonController.deleteHoaDon)
+
 
 module.exports = router;

@@ -776,3 +776,126 @@ exports.getHoaDonChuaThanhToanByNhaKhoa = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+exports.thongKeCongNoHoaDon = async (req, res) => {
+  try {
+    const { nhaKhoaId } = req.query;
+
+    let query = {
+      trangThai: {
+        $in: ["Chưa thanh toán", "Thanh toán một phần"],
+      },
+    };
+
+    // lọc theo nha khoa nếu có
+    if (
+      nhaKhoaId &&
+      mongoose.Types.ObjectId.isValid(nhaKhoaId)
+    ) {
+      query.nhaKhoa = nhaKhoaId;
+    }
+
+    const hoaDons = await HoaDon.find(query);
+
+    const now = new Date();
+
+    let conNo = {
+      soHoaDon: 0,
+      tongTien: 0,
+    };
+
+    let treHan = {
+      soHoaDon: 0,
+      tongTien: 0,
+    };
+
+    let chuaDenHan = {
+      soHoaDon: 0,
+      tongTien: 0,
+    };
+
+    // ================= HÀM TÍNH NGÀY ĐẾN HẠN =================
+    const getNgayDenHan = (
+      ngayXuatHoaDon,
+      chinhSachThanhToan
+    ) => {
+      const dueDate = new Date(ngayXuatHoaDon);
+
+      switch (chinhSachThanhToan) {
+        case "Thanh toán trước":
+        case "Thanh toán ngay":
+          return dueDate;
+
+        case "Thanh toán trong 7 ngày":
+          dueDate.setDate(dueDate.getDate() + 7);
+          return dueDate;
+
+        case "Thanh toán trong 10 ngày":
+          dueDate.setDate(dueDate.getDate() + 10);
+          return dueDate;
+
+        case "Thanh toán trong 30 ngày":
+          dueDate.setDate(dueDate.getDate() + 30);
+          return dueDate;
+
+        case "Thanh toán trong 60 ngày":
+          dueDate.setDate(dueDate.getDate() + 60);
+          return dueDate;
+
+        case "Thanh toán trong 90 ngày":
+          dueDate.setDate(dueDate.getDate() + 90);
+          return dueDate;
+
+        case "Thanh toán cuối tháng":
+          dueDate.setMonth(dueDate.getMonth() + 1);
+          dueDate.setDate(0);
+          dueDate.setHours(23, 59, 59, 999);
+          return dueDate;
+
+        default:
+          return dueDate;
+      }
+    };
+
+    // ================= DUYỆT HÓA ĐƠN =================
+    for (const hd of hoaDons) {
+      const soTienConLai =
+        Number(hd.conLai || 0);
+
+      // ===== CÒN NỢ =====
+      conNo.soHoaDon += 1;
+      conNo.tongTien += soTienConLai;
+
+      // ===== NGÀY ĐẾN HẠN =====
+      const ngayDenHan = getNgayDenHan(
+        hd.ngayXuatHoaDon,
+        hd.chinhSachThanhToan
+      );
+
+      // ===== TRỄ HẠN =====
+      if (now > ngayDenHan) {
+        treHan.soHoaDon += 1;
+        treHan.tongTien += soTienConLai;
+      } else {
+        // ===== CHƯA ĐẾN HẠN =====
+        chuaDenHan.soHoaDon += 1;
+        chuaDenHan.tongTien += soTienConLai;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        conNo,
+        treHan,
+        chuaDenHan,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
