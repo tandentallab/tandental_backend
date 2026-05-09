@@ -19,7 +19,9 @@ const quyenSuDungRoutes = require("./routes/quyenSuDungRoutes");
 const congTyRoutes = require("./routes/congTyRoutes");
 const nhaCungCapRoutes = require("./routes/nhaCungCapRoutes");
 const phieuBaoHanhRoutes = require("./routes/phieuBaoHanhRoutes");
+const baoCaoRoutes = require('./routes/baoCaoRoutes');
 const phieuThuRoutes = require("./routes/phieuThuRoutes");
+const dashboardRoutes = require('./routes/dashboardRoutes');
 
 const app = express();
 
@@ -43,6 +45,7 @@ const startServer = async () => {
   try {
     await connectDB();
 
+    app.use("/api/dashboard", dashboardRoutes);
     app.use("/api/staff", staffRoutes);
     app.use("/api/nhakhoa", nhaKhoaRoutes);
     app.use("/api/nguoilienhe", nguoiLienHeRoutes);
