@@ -27,7 +27,7 @@ const normalizeRange = (startDate, endDate) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FORMAT NGÀY: Thêm tham số dateField để dùng chung cho cả ngayNhan và ngayThu
+// FORMAT NGÀY: Định dạng trục X (Ngày/Tuần) có kèm Timezone VN
 // ─────────────────────────────────────────────────────────────────────────────
 const buildDateGroup = (groupBy, dateField) => {
     if (groupBy === "week") {
@@ -43,7 +43,7 @@ const buildDateGroup = (groupBy, dateField) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// API: Lấy dữ liệu cho 1 chart
+// API: GET CHART STATS
 // ─────────────────────────────────────────────────────────────────────────────
 exports.getChartStats = async (req, res) => {
     try {
@@ -61,7 +61,9 @@ exports.getChartStats = async (req, res) => {
         let resultData = [];
 
         if (chartType === "chart1") {
-            // ... (Giữ nguyên logic chart1 của bạn) ...
+            // ─────────────────────────────────────────────────────────────────
+            // CHART 1: HÀNG NHẬN THEO LOẠI SẢN PHẨM
+            // ─────────────────────────────────────────────────────────────────
             resultData = await DonHang.aggregate([
                 { $match: matchQuery },
                 { $unwind: "$danhSachSanPham" },
@@ -88,7 +90,9 @@ exports.getChartStats = async (req, res) => {
             ]);
 
         } else if (chartType === "chart2") {
-            // ... (Giữ nguyên logic chart2 của bạn) ...
+            // ─────────────────────────────────────────────────────────────────
+            // CHART 2: TÌNH HÌNH NHẬN HÀNG (ĐƠN)
+            // ─────────────────────────────────────────────────────────────────
             resultData = await DonHang.aggregate([
                 { $match: matchQuery },
                 {
@@ -133,26 +137,59 @@ exports.getChartStats = async (req, res) => {
             ]);
 
         } else if (chartType === "chart3") {
-            // ─────────────────────────────────────────────────────────────────
-            // CHART 3: DOANH SỐ THỰC THU (Tính theo Phiếu Thu)
-            // ─────────────────────────────────────────────────────────────────
-            resultData = await PhieuThu.aggregate([
-                { $match: matchQuery },
-                {
-                    $group: {
-                        _id: { sortKey, displayDate },
-                        "Thực thu": { $sum: "$soTienThu" } // Cộng dồn tiền thu
-                    }
-                },
-                { $sort: { "_id.sortKey": 1 } },
-                {
-                    $project: {
-                        _id: 0,
-                        date: "$_id.displayDate",
-                        "Thực thu": 1
-                    }
-                }
+            const diffMs = end.getTime() - start.getTime() + 1;
+            const prevStart = new Date(start.getTime() - diffMs);
+            const prevEnd = new Date(end.getTime() - diffMs);
+
+            const currentPeriod = await PhieuThu.aggregate([
+                { $match: { ngayThu: { $gte: start, $lte: end } } },
+                { $group: { _id: { sortKey, displayDate }, total: { $sum: "$soTienThu" } } },
+                { $sort: { "_id.sortKey": 1 } }
             ]);
+
+            const previousPeriod = await PhieuThu.aggregate([
+                { $match: { ngayThu: { $gte: prevStart, $lte: prevEnd } } },
+                { $group: { _id: { sortKey, displayDate }, total: { $sum: "$soTienThu" } } },
+                { $sort: { "_id.sortKey": 1 } }
+            ]);
+
+            if (groupBy === 'day') {
+                let currDate = dayjs(start);
+                const endDay = dayjs(end);
+
+                while (currDate.isBefore(endDay) || currDate.isSame(endDay, 'day')) {
+                    const currentSortKey = currDate.format('YYYY-MM-DD');
+                    const currentDisplay = currDate.format('DD/MM');
+
+                    // Tính ngày tương ứng của kì trước
+                    const prevDateObj = currDate.subtract(diffMs, 'millisecond');
+
+                    const currentVal = currentPeriod.find(p => p._id.sortKey === currentSortKey)?.total || 0;
+                    const prevVal = previousPeriod.find(p => p._id.sortKey === prevDateObj.format('YYYY-MM-DD'))?.total || 0;
+
+                    resultData.push({
+                        date: currentDisplay,
+                        prevDate: prevDateObj.format('DD/MM'), // 👉 Gửi thêm ngày kì trước về
+                        "Kì này": currentVal,
+                        "Kì trước": prevVal
+                    });
+
+                    currDate = currDate.add(1, 'day');
+                }
+            } else {
+                const maxLength = Math.max(currentPeriod.length, previousPeriod.length);
+                for (let i = 0; i < maxLength; i++) {
+                    const labelDate = currentPeriod[i]?._id.displayDate || `Điểm ${i + 1}`;
+                    const prevLabelDate = previousPeriod[i]?._id.displayDate || "N/A";
+
+                    resultData.push({
+                        date: labelDate,
+                        prevDate: prevLabelDate, // 👉 Gửi thêm tuần/tháng kì trước về
+                        "Kì này": currentPeriod[i]?.total || 0,
+                        "Kì trước": previousPeriod[i]?.total || 0
+                    });
+                }
+            }
         }
 
         return res.status(200).json({ success: true, data: resultData });
