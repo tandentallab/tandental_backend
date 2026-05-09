@@ -166,6 +166,41 @@ exports.updatePhieuThu = async (req, res) => {
   }
 };
 
+/* ================= LẤY CHI TIẾT PHIẾU THU ================= */
+exports.getPhieuThuById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const phieuThu = await PhieuThu.findById(id)
+      .populate({
+        path: "hoaDon",
+        populate: [
+          {
+            path: "nhaKhoa",
+            select: "hoVaTen tenGiaoDich soDienThoai email moTa diaChiCuThe quanHuyen tinh quocGia",
+          },
+          {
+            path: "danhSachDonHang.donHang",
+            select: "bacSi benhNhan",
+            populate: [
+              { path: "bacSi", select: "hoVaTen" },
+              { path: "benhNhan", select: "hoVaTen soDienThoai" },
+            ],
+          },
+        ],
+      })
+      .populate("nguoiTao", "hoVaTen HoTenNV");
+
+    if (!phieuThu) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy phiếu thu" });
+    }
+
+    res.json({ success: true, data: phieuThu });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // exports.getPhieuThuByHoaDon = async (req, res) => {
 //   try {
 //     const { hoaDonId } = req.params;

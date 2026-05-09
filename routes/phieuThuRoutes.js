@@ -6,6 +6,9 @@ const { verifyToken } = require("../middleware/authMiddleware");
 // Lấy tất cả phiếu thu
 router.get("/", phieuThuController.getAllPhieuThu);
 
+// Lấy chi tiết phiếu thu
+router.get("/:id", phieuThuController.getPhieuThuById);
+
 // Tạo phiếu thu
 router.post("/", verifyToken, phieuThuController.createPhieuThu);
 

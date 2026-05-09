@@ -3,7 +3,7 @@ const PhieuBaoHanh = require("../models/PhieuBaoHanh");
 // [POST] Tạo phiếu bảo hành
 exports.createPhieuBaoHanh = async (req, res) => {
   try {
-    const { donHang } = req.body;
+    const { donHang, sanPham } = req.body;
 
     // Tạo mã bảo hành từ mã đơn hàng
     const donHangRecord = await require("../models/DonHang").findById(donHang);
@@ -11,8 +11,15 @@ exports.createPhieuBaoHanh = async (req, res) => {
       return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
     }
 
-    const idStr = donHangRecord._id.toString();
-    const maBaoHanh = `TAN${idStr.substring(idStr.length - 8).toUpperCase()}`;
+    const donHangIdStr = donHangRecord._id.toString();
+    const sanPhamIdStr = sanPham ? sanPham.toString() : "";
+
+    // Mã bảo hành phải unique theo từng sản phẩm trong cùng đơn hàng
+    const donHangSuffix = donHangIdStr.substring(donHangIdStr.length - 6).toUpperCase();
+    const sanPhamSuffix = sanPhamIdStr ? sanPhamIdStr.substring(sanPhamIdStr.length - 4).toUpperCase() : "0000";
+    const existedCount = await PhieuBaoHanh.countDocuments({ donHang, sanPham });
+    const sequence = String(existedCount + 1).padStart(2, "0");
+    const maBaoHanh = `TANBH${donHangSuffix}${sanPhamSuffix}${sequence}`;
 
     const newPhieuBaoHanh = new PhieuBaoHanh({
       ...req.body,
