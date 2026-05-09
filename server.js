@@ -61,6 +61,8 @@ const startServer = async () => {
     app.use("/api/nha-cung-cap", nhaCungCapRoutes);
     app.use("/api/phieu-bao-hanh", phieuBaoHanhRoutes);
     app.use("/api/phieu-thu", phieuThuRoutes);
+    app.use("/api/baocao", baoCaoRoutes);
+    
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
