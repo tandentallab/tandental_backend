@@ -1,31 +1,41 @@
 const dayjs = require("dayjs");
+const utc = require("dayjs/plugin/utc");
+const timezone = require("dayjs/plugin/timezone");
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
 const DonHang = require("../models/DonHang");
 const SanPham = require("../models/SanPham");
 
+const VN_TZ = "Asia/Ho_Chi_Minh"; // UTC+7
+
 // ─────────────────────────────────────────────────────────────────────────────
-// HELPER: Chuẩn hóa khoảng ngày
-//   • Luôn nhận 2 tham số rõ ràng từ frontend (YYYY-MM-DD)
-//   • startDate → 00:00:00.000   (đầu ngày)
-//   • endDate   → 23:59:59.999   (cuối ngày)
-//   Loại bỏ hoàn toàn logic "tính ngày" phía backend → frontend là SSOT
+// HELPER: Chuẩn hóa khoảng ngày theo múi giờ Việt Nam
+//   Nhất quán 100% với dashboardController — dùng dayjs.tz()
+//   startDate "YYYY-MM-DD" → 00:00:00.000 giờ VN
+//   endDate   "YYYY-MM-DD" → 23:59:59.999 giờ VN
 // ─────────────────────────────────────────────────────────────────────────────
 const normalizeRange = (startDate, endDate) => {
     if (!startDate || !endDate) {
-        // Fallback an toàn: tháng hiện tại
-        const now = dayjs();
+        const now = dayjs().tz(VN_TZ);
         return {
             start: now.startOf("month").toDate(),
             end: now.endOf("day").toDate(),
         };
     }
+    // Cắt phần YYYY-MM-DD nếu frontend gửi ISO string đầy đủ
+    const startStr = String(startDate).split("T")[0];
+    const endStr = String(endDate).split("T")[0];
+
     return {
-        start: dayjs(startDate).startOf("day").toDate(),   // 00:00:00.000
-        end: dayjs(endDate).endOf("day").toDate(),          // 23:59:59.999
+        start: dayjs.tz(startStr, VN_TZ).startOf("day").toDate(),
+        end: dayjs.tz(endStr, VN_TZ).endOf("day").toDate(),
     };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// API 1: Top 10 sản phẩm (dùng cho Biểu đồ)
+// API 1: Top 10 sản phẩm (Biểu đồ)
 // ─────────────────────────────────────────────────────────────────────────────
 exports.getTopProductsReport = async (req, res) => {
     try {
@@ -34,11 +44,7 @@ exports.getTopProductsReport = async (req, res) => {
         const matchField = dateType === "henGiao" ? "henGiao" : "ngayNhan";
 
         const topProducts = await DonHang.aggregate([
-            {
-                $match: {
-                    [matchField]: { $gte: start, $lte: end },
-                },
-            },
+            { $match: { [matchField]: { $gte: start, $lte: end } } },
             { $unwind: "$danhSachSanPham" },
             {
                 $group: {
@@ -58,13 +64,7 @@ exports.getTopProductsReport = async (req, res) => {
                 },
             },
             { $unwind: "$productInfo" },
-            {
-                $project: {
-                    _id: 0,
-                    name: "$productInfo.tenSanPham",
-                    quantity: 1,
-                },
-            },
+            { $project: { _id: 0, name: "$productInfo.tenSanPham", quantity: 1 } },
         ]);
 
         res.status(200).json({ success: true, data: topProducts });
@@ -74,7 +74,7 @@ exports.getTopProductsReport = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// API 2: Báo cáo chi tiết 3 tầng (dùng cho Bảng)
+// API 2: Báo cáo chi tiết 3 tầng (Bảng)
 // ─────────────────────────────────────────────────────────────────────────────
 exports.getDetailedProductReport = async (req, res) => {
     try {
@@ -83,11 +83,7 @@ exports.getDetailedProductReport = async (req, res) => {
         const matchField = dateType === "henGiao" ? "henGiao" : "ngayNhan";
 
         const reportData = await DonHang.aggregate([
-            {
-                $match: {
-                    [matchField]: { $gte: start, $lte: end },
-                },
-            },
+            { $match: { [matchField]: { $gte: start, $lte: end } } },
             { $unwind: "$danhSachSanPham" },
             { $addFields: { productObjectId: { $toObjectId: "$danhSachSanPham.sanPham" } } },
             {
