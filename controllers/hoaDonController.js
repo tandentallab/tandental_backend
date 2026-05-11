@@ -22,6 +22,175 @@ exports.getDonHangChuaXuatHoaDon = async (req, res) => {
   }
 };
 
+// ================= ĐẾM SỐ ĐƠN HÀNG CHƯA XUẤT HÓA ĐƠN CỦA TẤT CẢ NHA KHOA =================
+exports.countDonHangChuaXuatHoaDonAll = async (
+  req,
+  res
+) => {
+  try {
+    const result =
+      await DonHang.aggregate([
+        {
+          $match: {
+            daXuatHoaDon: {
+              $ne: true,
+            },
+          },
+        },
+
+        /* ================= GROUP THEO NHA KHOA ================= */
+
+        {
+          $group: {
+            _id: "$nhaKhoa",
+
+            soDonHangChuaXuatHoaDon:
+              {
+                $sum: 1,
+              },
+
+            // 🔥 ngày nhận đơn hàng gần nhất chưa xuất
+            ngayDonHangGanNhat: {
+              $max: "$ngayNhan",
+            },
+          },
+        },
+
+        /* ================= LẤY THÔNG TIN NHA KHOA ================= */
+
+        {
+          $lookup: {
+            from: "nhakhoas",
+
+            localField: "_id",
+
+            foreignField: "_id",
+
+            as: "nhaKhoa",
+          },
+        },
+
+        {
+          $unwind: "$nhaKhoa",
+        },
+
+        /* ================= LẤY NGÀY XUẤT HÓA ĐƠN CUỐI ================= */
+
+        {
+          $lookup: {
+            from: "hoadons",
+
+            let: {
+              nhaKhoaId:
+                "$nhaKhoa._id",
+            },
+
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $eq: [
+                      "$nhaKhoa",
+                      "$$nhaKhoaId",
+                    ],
+                  },
+                },
+              },
+
+              {
+                $sort: {
+                  ngayXuatHoaDon:
+                    -1,
+                },
+              },
+
+              {
+                $limit: 1,
+              },
+
+              {
+                $project: {
+                  _id: 0,
+
+                  ngayXuatHoaDon: 1,
+
+                  thanhTien: 1,
+
+                  trangThai: 1,
+                },
+              },
+            ],
+
+            as: "hoaDonGanNhat",
+          },
+        },
+
+        {
+          $unwind: {
+            path: "$hoaDonGanNhat",
+
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+
+        /* ================= PROJECT ================= */
+
+        {
+          $project: {
+            _id: 0,
+
+            nhaKhoaId:
+              "$nhaKhoa._id",
+
+            tenNhaKhoa:
+              "$nhaKhoa.tenNhaKhoa",
+
+            hoVaTen:
+              "$nhaKhoa.hoVaTen",
+
+            tinh:
+              "$nhaKhoa.tinh",
+
+            soDonHangChuaXuatHoaDon: 1,
+
+            // 🔥 ngày đơn hàng chưa xuất gần nhất
+            ngayDonHangGanNhat: 1,
+
+            // 🔥 hóa đơn gần nhất
+            ngayXuatHoaDonCuoi:
+              "$hoaDonGanNhat.ngayXuatHoaDon",
+
+            hoaDonGanNhat:
+              "$hoaDonGanNhat",
+          },
+        },
+
+        /* ================= SORT ================= */
+
+        {
+          $sort: {
+            soDonHangChuaXuatHoaDon:
+              -1,
+          },
+        },
+      ]);
+
+    res.json({
+      success: true,
+
+      totalNhaKhoa:
+        result.length,
+
+      data: result,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+
+      message: err.message,
+    });
+  }
+};
 // ================= LẤY ĐƠN GIÁ =================
 async function getDonGia(nhaKhoaId, sanPhamId) {
   const giaRieng = await BangGia.findOne({
@@ -179,7 +348,6 @@ exports.createHoaDon = async (req, res) => {
 };
 
 // ================= ADMIN - LẤY TẤT CẢ HÓA ĐƠN =================
-// ================= ADMIN - LẤY TẤT CẢ HÓA ĐƠN =================
 exports.getAllHoaDonAdmin = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -234,16 +402,15 @@ exports.getAllHoaDonAdmin = async (req, res) => {
 
       const searchConditions = [];
 
-      // search theo _id
-      if (
-        mongoose.Types.ObjectId.isValid(keyword)
-      ) {
-        searchConditions.push({
-          _id: keyword,
-        });
-      }
+      // ================= SEARCH THEO SỐ HÓA ĐƠN =================
+      searchConditions.push({
+        soHoaDon: {
+          $regex: keyword,
+          $options: "i",
+        },
+      });
 
-      // search theo mã TANxxxx
+      // ================= SEARCH THEO MÃ TANxxxx =================
       searchConditions.push({
         $expr: {
           $regexMatch: {
@@ -261,7 +428,9 @@ exports.getAllHoaDonAdmin = async (req, res) => {
                 },
               ],
             },
-            regex: keyword,
+
+            regex: keyword.toUpperCase(),
+
             options: "i",
           },
         },
@@ -302,9 +471,7 @@ exports.getAllHoaDonAdmin = async (req, res) => {
 
       total,
 
-      totalPages: Math.ceil(
-        total / limit
-      ),
+      totalPages: Math.ceil(total / limit),
 
       currentPage: page,
 
@@ -317,7 +484,6 @@ exports.getAllHoaDonAdmin = async (req, res) => {
     });
   }
 };
-
 // ================= LẤY HÓA ĐƠN THEO NHA KHOA =================
 exports.getAllHoaDon = async (req, res) => {
   try {
