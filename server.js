@@ -22,6 +22,9 @@ const phieuBaoHanhRoutes = require("./routes/phieuBaoHanhRoutes");
 const baoCaoRoutes = require('./routes/baoCaoRoutes');
 const phieuThuRoutes = require("./routes/phieuThuRoutes");
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const nhanVienRoutes = require("./routes/nhanVienRoutes");
+const bangLuongRoutes = require("./routes/bangLuongRoutes");
+
 
 const app = express();
 
@@ -62,6 +65,8 @@ const startServer = async () => {
     app.use("/api/phieu-bao-hanh", phieuBaoHanhRoutes);
     app.use("/api/phieu-thu", phieuThuRoutes);
     app.use("/api/baocao", baoCaoRoutes);
+    app.use("/api/nhan-vien", nhanVienRoutes);
+    app.use("/api/bang-luong", bangLuongRoutes);
     
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
