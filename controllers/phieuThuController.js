@@ -167,12 +167,8 @@ exports.createPhieuThu = async (req, res) => {
     const soPhieuThu = `${prefix}${String(count + 1).padStart(4, "0")}`;
 
     const phieuThu = await PhieuThu.create({
-<<<<<<< HEAD
-      hoaDon,
-=======
       soPhieuThu,
       danhSachHoaDon: danhSachLuu,
->>>>>>> origin/sang
       nguoiTao: req.user?.id || req.user?._id || null,
       ngayThu,
       soTienThu: tongTienThu + tongConThua, // giữ tổng người nộp (kể cả thừa)
