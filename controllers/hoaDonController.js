@@ -38,6 +38,8 @@ exports.getDonHangChuaXuatHoaDon = async (req, res) => {
     const donHangs = await DonHang.find({
       nhaKhoa: nhaKhoaId,
       daXuatHoaDon: { $ne: true },
+      //Chỉ lấy đơn hàng có loại đơn là mới
+      "danhSachSanPham.loaiDon": "Mới",
     })
       .populate("bacSi", "hoVaTen")
       .sort({ createdAt: -1 });
@@ -61,6 +63,10 @@ exports.countDonHangChuaXuatHoaDonAll = async (
             daXuatHoaDon: {
               $ne: true,
             },
+
+            // 🔥 chỉ lấy đơn có loaiDon = "Mới"
+            "danhSachSanPham.loaiDon":
+              "Mới",
           },
         },
 
@@ -1188,4 +1194,3 @@ exports.thongKeCongNoHoaDon = async (req, res) => {
     });
   }
 };
-

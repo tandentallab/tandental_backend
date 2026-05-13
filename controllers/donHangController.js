@@ -1,6 +1,7 @@
 const DonHang = require("../models/DonHang");
 const BenhNhan = require("../models/BenhNhan");
 const NguoiLienHe = require("../models/NguoiLienHe");
+const NhaKhoa = require("../models/NhaKhoa");
 
 // [POST] Tạo đơn hàng mới
 exports.createDonHang = async (req, res) => {
@@ -18,7 +19,15 @@ exports.createDonHang = async (req, res) => {
             return res.status(400).json({ success: false, message: "Bác sĩ không thuộc Nha khoa này" });
         }
 
-        const newDonHang = new DonHang(req.body);
+        // Sinh maDonHang theo format TANyymm0000, đếm theo ngayNhan
+        const ngayNhan = new Date(req.body.ngayNhan || Date.now());
+        const yy = String(ngayNhan.getFullYear()).slice(-2);
+        const mm = String(ngayNhan.getMonth() + 1).padStart(2, "0");
+        const prefix = `TAN${yy}${mm}`;
+        const count = await DonHang.countDocuments({ maDonHang: { $regex: `^${prefix}` } });
+        const maDonHang = `${prefix}${String(count + 1).padStart(4, "0")}`;
+
+        const newDonHang = new DonHang({ ...req.body, maDonHang });
         await newDonHang.save();
 
         res.status(201).json({
@@ -35,20 +44,88 @@ exports.createDonHang = async (req, res) => {
     }
 };
 
-// [GET] Lấy danh sách đơn hàng
+// [GET] Lấy danh sách đơn hàng (có phân trang, tìm kiếm, lọc)
 exports.getAllDonHang = async (req, res) => {
     try {
-        const donHangs = await DonHang.find()
-            .populate("nhaKhoa", "tenGiaoDich hoVaTen")
-            .populate("bacSi", "hoVaTen soDienThoai")
-            .populate("benhNhan", "hoVaTen soHoSo")
-            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh")
-            .sort({ createdAt: -1 }); // Mới nhất lên đầu
+        const {
+            page = 1, limit = 20,
+            search = "",
+            nhaKhoa, benhNhan, trangThai,
+            ngayNhanFrom, ngayNhanTo,
+            ycHoanThanhFrom, ycHoanThanhTo,
+            henGiaoFrom, henGiaoTo,
+        } = req.query;
+
+        const pageNum = Math.max(1, parseInt(page));
+        const limitNum = Math.max(1, Math.min(5000, parseInt(limit)));
+        const skip = (pageNum - 1) * limitNum;
+
+        const filter = {};
+        if (nhaKhoa) filter.nhaKhoa = nhaKhoa;
+        if (benhNhan) filter.benhNhan = benhNhan;
+        if (trangThai) filter.trangThai = { $in: trangThai.split(",") };
+
+        if (ngayNhanFrom || ngayNhanTo) {
+            filter.ngayNhan = {};
+            if (ngayNhanFrom) filter.ngayNhan.$gte = new Date(ngayNhanFrom);
+            if (ngayNhanTo) filter.ngayNhan.$lte = new Date(ngayNhanTo);
+        }
+        if (ycHoanThanhFrom || ycHoanThanhTo) {
+            filter.yeuCauHoanThanh = {};
+            if (ycHoanThanhFrom) filter.yeuCauHoanThanh.$gte = new Date(ycHoanThanhFrom);
+            if (ycHoanThanhTo) filter.yeuCauHoanThanh.$lte = new Date(ycHoanThanhTo);
+        }
+        if (henGiaoFrom || henGiaoTo) {
+            filter.henGiao = {};
+            if (henGiaoFrom) filter.henGiao.$gte = new Date(henGiaoFrom);
+            if (henGiaoTo) filter.henGiao.$lte = new Date(henGiaoTo);
+        }
+
+        // Text search: query related collections for matching IDs
+        if (search && search.trim()) {
+            const keyword = search.trim();
+            const regex = { $regex: keyword, $options: "i" };
+            const [nkIds, bnIds, bsIds] = await Promise.all([
+                NhaKhoa.find({ $or: [{ tenGiaoDich: regex }, { hoVaTen: regex }] }).distinct("_id"),
+                BenhNhan.find({ hoVaTen: regex }).distinct("_id"),
+                NguoiLienHe.find({ hoVaTen: regex }).distinct("_id"),
+            ]);
+            const orConditions = [{ maDonHang: regex }];
+            if (nkIds.length > 0) orConditions.push({ nhaKhoa: { $in: nkIds } });
+            if (bnIds.length > 0) orConditions.push({ benhNhan: { $in: bnIds } });
+            if (bsIds.length > 0) orConditions.push({ bacSi: { $in: bsIds } });
+            filter.$or = orConditions;
+        }
+
+        const populateOpts = [
+            { path: "nhaKhoa", select: "tenGiaoDich hoVaTen" },
+            { path: "bacSi", select: "hoVaTen soDienThoai" },
+            { path: "benhNhan", select: "hoVaTen soHoSo" },
+            { path: "danhSachSanPham.sanPham", select: "tenSanPham donGiaChung loaiTinh quyTrinh" },
+        ];
+
+        const now = new Date();
+        const [donHangs, total, statsRaw, treHen] = await Promise.all([
+            DonHang.find(filter)
+                .populate(populateOpts)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limitNum),
+            DonHang.countDocuments(filter),
+            DonHang.aggregate([{ $group: { _id: "$trangThai", count: { $sum: 1 } } }]),
+            DonHang.countDocuments({ henGiao: { $lt: now }, trangThai: { $nin: ["Hoàn thành", "Đã giao"] } }),
+        ]);
+
+        const stats = { treHen };
+        statsRaw.forEach((s) => { if (s._id) stats[s._id] = s.count; });
 
         res.status(200).json({
             success: true,
-            count: donHangs.length,
             data: donHangs,
+            total,
+            totalPages: Math.ceil(total / limitNum) || 1,
+            currentPage: pageNum,
+            stats,
         });
     } catch (error) {
         res.status(500).json({
@@ -66,7 +143,7 @@ exports.getDonHangById = async (req, res) => {
             .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe")
             .populate("bacSi", "hoVaTen soDienThoai email")
             .populate("benhNhan", "hoVaTen soHoSo soDienThoai")
-            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh")
+            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh")
             .populate("danhSachSanPham.donHangCu");
 
         if (!donHang) {
@@ -86,7 +163,7 @@ exports.updateDonHang = async (req, res) => {
             .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe")
             .populate("bacSi", "hoVaTen soDienThoai email")
             .populate("benhNhan", "hoVaTen soHoSo soDienThoai")
-            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh")
+            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh")
             .populate("danhSachSanPham.donHangCu");
 
         if (!updatedDonHang) {
@@ -94,6 +171,32 @@ exports.updateDonHang = async (req, res) => {
         }
 
         res.status(200).json({ success: true, data: updatedDonHang });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// [PATCH] Cập nhật trạng thái công đoạn
+exports.updateCongDoanStatus = async (req, res) => {
+    try {
+        const { spIndex, thuTu, trangThai } = req.body;
+        const donHang = await DonHang.findById(req.params.id);
+        if (!donHang) {
+            return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
+        }
+        if (spIndex === undefined || spIndex < 0 || spIndex >= donHang.danhSachSanPham.length) {
+            return res.status(400).json({ success: false, message: "spIndex không hợp lệ" });
+        }
+        const sp = donHang.danhSachSanPham[spIndex];
+        const existing = sp.trangThaiCongDoan.find((cd) => cd.thuTu === thuTu);
+        if (existing) {
+            existing.trangThai = trangThai;
+        } else {
+            sp.trangThaiCongDoan.push({ thuTu, trangThai });
+        }
+        await donHang.save();
+        await donHang.populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh");
+        res.status(200).json({ success: true, data: donHang });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
