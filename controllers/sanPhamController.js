@@ -24,7 +24,7 @@ exports.getAllSanPham = async (req, res) => {
 exports.updateSanPham = async (req, res) => {
     try {
         const data = await SanPham.findByIdAndUpdate(req.params.id, req.body, {
-            new: true,
+            returnDocument: 'after',
             runValidators: true,
         });
 

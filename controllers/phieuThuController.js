@@ -118,13 +118,7 @@ exports.createPhieuThu = async (req, res) => {
 
     let duocKhauTru = soTienThu - conThua
 
-    // Generate soPhieuThu
-    const count = await PhieuThu.countDocuments();
-    const year = new Date().getFullYear();
-    const soPhieuThu = `PT${year}${String(count + 1).padStart(4, "0")}`;
-
     const phieuThu = await PhieuThu.create({
-      soPhieuThu,
       hoaDon,
       nguoiTao: req.user?.id || req.user?._id || null,
       ngayThu,
@@ -181,7 +175,7 @@ exports.getPhieuThuById = async (req, res) => {
           },
           {
             path: "danhSachDonHang.donHang",
-            select: "bacSi benhNhan",
+            select: "maDonHang bacSi benhNhan",
             populate: [
               { path: "bacSi", select: "hoVaTen" },
               { path: "benhNhan", select: "hoVaTen soDienThoai" },

@@ -11,8 +11,26 @@ exports.getDonHangChuaXuatHoaDon = async (req, res) => {
 
     const donHangs = await DonHang.find({
       nhaKhoa: nhaKhoaId,
-      daXuatHoaDon: { $ne: true },
+      daXuatHoaDon: false,
+      trangThai: "Hoàn thành",
     })
+      .populate("bacSi", "hoVaTen")
+      .sort({ createdAt: -1 });
+
+    res.json(donHangs);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ================= LẤY DANH SÁCH ĐƠN HÀNG CHƯA XUẤT HÓA ĐƠN - TẤT CẢ NHA KHOA =================
+exports.getDonHangChuaXuatHoaDonAll = async (req, res) => {
+  try {
+    const donHangs = await DonHang.find({
+      daXuatHoaDon: false,
+      trangThai: "Hoàn thành",
+    })
+      .populate("nhaKhoa", "hoVaTen tenGiaoDich")
       .populate("bacSi", "hoVaTen")
       .sort({ createdAt: -1 });
 
@@ -32,9 +50,8 @@ exports.countDonHangChuaXuatHoaDonAll = async (
       await DonHang.aggregate([
         {
           $match: {
-            daXuatHoaDon: {
-              $ne: true,
-            },
+            daXuatHoaDon: false,
+            trangThai: "Hoàn thành",
           },
         },
 
@@ -410,32 +427,6 @@ exports.getAllHoaDonAdmin = async (req, res) => {
         },
       });
 
-      // ================= SEARCH THEO MÃ TANxxxx =================
-      searchConditions.push({
-        $expr: {
-          $regexMatch: {
-            input: {
-              $concat: [
-                "TAN",
-                {
-                  $toUpper: {
-                    $substrCP: [
-                      { $toString: "$_id" },
-                      16,
-                      8,
-                    ],
-                  },
-                },
-              ],
-            },
-
-            regex: keyword.toUpperCase(),
-
-            options: "i",
-          },
-        },
-      });
-
       query.$or = searchConditions;
     }
 
@@ -452,7 +443,7 @@ exports.getAllHoaDonAdmin = async (req, res) => {
       .populate({
         path: "danhSachDonHang.donHang",
 
-        select: "_id danhSachSanPham",
+        select: "_id maDonHang danhSachSanPham",
 
         populate: {
           path: "danhSachSanPham.sanPham",
@@ -507,11 +498,10 @@ exports.getAllHoaDon = async (req, res) => {
     if (search) {
       query.$or = [
         {
-          _id: search.match(
-            /^[0-9a-fA-F]{24}$/
-          )
-            ? search
-            : null,
+          soHoaDon: {
+            $regex: search,
+            $options: "i",
+          },
         },
       ];
     }

@@ -63,7 +63,7 @@ exports.updateNhanVien = async (req, res) => {
     const data = await NhanVien.findByIdAndUpdate(
       req.params.id,
       req.body,
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     res.json({

@@ -1,50 +1,133 @@
 const PhieuBaoHanh = require("../models/PhieuBaoHanh");
+const DonHang = require("../models/DonHang");
+const NhaKhoa = require("../models/NhaKhoa");
 
-// [POST] Tạo phiếu bảo hành
+const generateUniqueQRCode = async () => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    let maQR = "";
+    for (let i = 0; i < 4; i += 1) {
+      maQR += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    const existingQR = await PhieuBaoHanh.findOne({ maQR });
+    if (!existingQR) {
+      return maQR;
+    }
+  }
+
+  throw new Error("Không thể sinh mã QR duy nhất");
+};
+
+// [POST] Tạo hoặc cập nhật phiếu bảo hành (1 phiếu cho cả đơn hàng)
 exports.createPhieuBaoHanh = async (req, res) => {
   try {
-    const { donHang, sanPham } = req.body;
+    const { donHang, danhSachBaoHanh, mauTheTi, ghiChu } = req.body;
 
-    // Tạo mã bảo hành từ mã đơn hàng
-    const donHangRecord = await require("../models/DonHang").findById(donHang);
+    if (!donHang) {
+      return res.status(400).json({ success: false, message: "Thiếu mã đơn hàng" });
+    }
+
+    if (!Array.isArray(danhSachBaoHanh) || danhSachBaoHanh.length === 0) {
+      return res.status(400).json({ success: false, message: "Phiếu bảo hành phải có ít nhất 1 sản phẩm" });
+    }
+
+    // Lấy thông tin đơn hàng
+    const donHangRecord = await DonHang.findById(donHang);
     if (!donHangRecord) {
       return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
     }
 
-    const donHangIdStr = donHangRecord._id.toString();
-    const sanPhamIdStr = sanPham ? sanPham.toString() : "";
+    const nhaKhoaRecord = donHangRecord.nhaKhoa
+      ? await NhaKhoa.findById(donHangRecord.nhaKhoa).select("hoVaTen tenGiaoDich soDienThoai")
+      : null;
 
-    // Mã bảo hành phải unique theo từng sản phẩm trong cùng đơn hàng
-    const donHangSuffix = donHangIdStr.substring(donHangIdStr.length - 6).toUpperCase();
-    const sanPhamSuffix = sanPhamIdStr ? sanPhamIdStr.substring(sanPhamIdStr.length - 4).toUpperCase() : "0000";
-    const existedCount = await PhieuBaoHanh.countDocuments({ donHang, sanPham });
-    const sequence = String(existedCount + 1).padStart(2, "0");
-    const maBaoHanh = `TANBH${donHangSuffix}${sanPhamSuffix}${sequence}`;
+    const safeDanhSachBaoHanh = danhSachBaoHanh
+      .filter((item) => item && item.sanPham && item.baoHanhTu && item.baoHanhDen)
+      .map((item) => ({
+        sanPham: item.sanPham,
+        viTriRang: item.viTriRang || "",
+        soLuong: Number(item.soLuong) || 1,
+        mau: item.mau || "",
+        baoHanhTu: item.baoHanhTu,
+        baoHanhDen: item.baoHanhDen,
+      }));
 
-    const newPhieuBaoHanh = new PhieuBaoHanh({
-      ...req.body,
-      maBaoHanh,
-    });
+    if (safeDanhSachBaoHanh.length === 0) {
+      return res.status(400).json({ success: false, message: "Dữ liệu sản phẩm bảo hành không hợp lệ" });
+    }
 
-    await newPhieuBaoHanh.save();
+    // Kiểm tra phiếu bảo hành đã tồn tại chưa
+    let phieu = await PhieuBaoHanh.findOne({ donHang });
 
-    const populatedPhieu = await newPhieuBaoHanh.populate([
-      { path: "donHang" },
-      { path: "nhaKhoa" },
-      { path: "bacSi", select: "hoVaTen soDienThoai" },
-      { path: "benhNhan", select: "hoVaTen soDienThoai" },
-      { path: "sanPham", select: "tenSanPham donGiaChung" },
-    ]);
+    const baseData = {
+      donHang,
+      nhaKhoa: donHangRecord.nhaKhoa,
+      bacSi: donHangRecord.bacSi,
+      benhNhan: donHangRecord.benhNhan,
+      danhSachBaoHanh: safeDanhSachBaoHanh,
+      mauTheTi: mauTheTi || "Mẫu in Lab",
+      soDienThoai: nhaKhoaRecord?.soDienThoai || "",
+      ghiChu: ghiChu || "",
+    };
+
+    if (phieu) {
+      // Update phiếu bảo hành hiện tại
+      Object.assign(phieu, baseData);
+    } else {
+      // Tạo phiếu bảo hành mới
+      const donHangCodeForRef = (donHangRecord.maDonHang || "").toUpperCase();
+      const donHangSuffix = donHangCodeForRef
+        ? donHangCodeForRef.slice(-6)
+        : donHangRecord._id.toString().substring(donHangRecord._id.toString().length - 6).toUpperCase();
+
+        const maBaoHanhFromOrder = donHangRecord.maDonHang || null;
+
+        phieu = new PhieuBaoHanh({
+          ...baseData,
+          maBaoHanh: maBaoHanhFromOrder || `TANBH${donHangSuffix}`,
+          maQR: await generateUniqueQRCode(),
+        });
+    }
+
+      // Nếu cập nhật hoặc tạo, đảm bảo maBaoHanh bằng mã đơn hàng khi tồn tại
+      if (donHangRecord.maDonHang) {
+        phieu.maBaoHanh = donHangRecord.maDonHang;
+      }
+    await phieu.save();
+
+    const populatedPhieu = await PhieuBaoHanh.findById(phieu._id)
+      .populate({
+        path: "donHang",
+        select: "maDonHang ngayNhan",
+      })
+      .populate({
+        path: "nhaKhoa",
+        select: "tenGiaoDich hoVaTen",
+      })
+      .populate({
+        path: "bacSi",
+        select: "hoVaTen soDienThoai",
+      })
+      .populate({
+        path: "benhNhan",
+        select: "hoVaTen soDienThoai",
+      })
+      .populate({
+        path: "danhSachBaoHanh.sanPham",
+        select: "tenSanPham",
+      });
 
     res.status(201).json({
       success: true,
-      message: "Tạo phiếu bảo hành thành công",
+      message: phieu.isNew ? "Tạo phiếu bảo hành thành công" : "Cập nhật phiếu bảo hành thành công",
       data: populatedPhieu,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Lỗi khi tạo phiếu bảo hành",
+      message: "Lỗi khi tạo/cập nhật phiếu bảo hành",
       error: error.message,
     });
   }
@@ -54,11 +137,26 @@ exports.createPhieuBaoHanh = async (req, res) => {
 exports.getAllPhieuBaoHanh = async (req, res) => {
   try {
     const phieus = await PhieuBaoHanh.find()
-      .populate("donHang")
-      .populate("nhaKhoa", "hoVaTen tenGiaoDich")
-      .populate("bacSi", "hoVaTen soDienThoai")
-      .populate("benhNhan", "hoVaTen soDienThoai")
-      .populate("sanPham", "tenSanPham donGiaChung")
+      .populate({
+        path: "donHang",
+        select: "maDonHang ngayNhan",
+      })
+      .populate({
+        path: "nhaKhoa",
+        select: "hoVaTen tenGiaoDich",
+      })
+      .populate({
+        path: "bacSi",
+        select: "hoVaTen soDienThoai",
+      })
+      .populate({
+        path: "benhNhan",
+        select: "hoVaTen soDienThoai",
+      })
+      .populate({
+        path: "danhSachBaoHanh.sanPham",
+        select: "tenSanPham",
+      })
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -80,16 +178,31 @@ exports.getPhieuBaoHanhByDonHang = async (req, res) => {
   try {
     const { donHangId } = req.params;
 
-    const phieus = await PhieuBaoHanh.find({ donHang: donHangId })
-      .populate("donHang")
-      .populate("nhaKhoa", "hoVaTen tenGiaoDich")
-      .populate("bacSi", "hoVaTen soDienThoai")
-      .populate("benhNhan", "hoVaTen soDienThoai")
-      .populate("sanPham", "tenSanPham donGiaChung");
+    const phieu = await PhieuBaoHanh.findOne({ donHang: donHangId })
+      .populate({
+        path: "donHang",
+        select: "maDonHang ngayNhan",
+      })
+      .populate({
+        path: "nhaKhoa",
+        select: "hoVaTen tenGiaoDich",
+      })
+      .populate({
+        path: "bacSi",
+        select: "hoVaTen soDienThoai",
+      })
+      .populate({
+        path: "benhNhan",
+        select: "hoVaTen soDienThoai",
+      })
+      .populate({
+        path: "danhSachBaoHanh.sanPham",
+        select: "tenSanPham",
+      });
 
     res.status(200).json({
       success: true,
-      data: phieus,
+      data: phieu || null,
     });
   } catch (error) {
     res.status(500).json({
@@ -104,11 +217,25 @@ exports.getPhieuBaoHanhByDonHang = async (req, res) => {
 exports.getPhieuBaoHanhById = async (req, res) => {
   try {
     const phieu = await PhieuBaoHanh.findById(req.params.id)
-      .populate("donHang")
-      .populate("nhaKhoa")
-      .populate("bacSi", "hoVaTen soDienThoai")
-      .populate("benhNhan", "hoVaTen soDienThoai")
-      .populate("sanPham", "tenSanPham donGiaChung");
+      .populate({
+        path: "donHang",
+        select: "maDonHang ngayNhan",
+      })
+      .populate({
+        path: "nhaKhoa",
+      })
+      .populate({
+        path: "bacSi",
+        select: "hoVaTen soDienThoai",
+      })
+      .populate({
+        path: "benhNhan",
+        select: "hoVaTen soDienThoai",
+      })
+      .populate({
+        path: "danhSachBaoHanh.sanPham",
+        select: "tenSanPham",
+      });
 
     if (!phieu) {
       return res.status(404).json({ success: false, message: "Không tìm thấy phiếu bảo hành" });
@@ -128,11 +255,25 @@ exports.updatePhieuBaoHanh = async (req, res) => {
       req.body,
       { returnDocument: "after" }
     )
-      .populate("donHang")
-      .populate("nhaKhoa")
-      .populate("bacSi", "hoVaTen soDienThoai")
-      .populate("benhNhan", "hoVaTen soDienThoai")
-      .populate("sanPham", "tenSanPham donGiaChung");
+      .populate({
+        path: "donHang",
+        select: "maDonHang ngayNhan",
+      })
+      .populate({
+        path: "nhaKhoa",
+      })
+      .populate({
+        path: "bacSi",
+        select: "hoVaTen soDienThoai",
+      })
+      .populate({
+        path: "benhNhan",
+        select: "hoVaTen soDienThoai",
+      })
+      .populate({
+        path: "danhSachBaoHanh.sanPham",
+        select: "tenSanPham",
+      });
 
     if (!updatedPhieu) {
       return res.status(404).json({ success: false, message: "Không tìm thấy phiếu bảo hành" });

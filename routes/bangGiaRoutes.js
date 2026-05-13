@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const {
+  getAllBangGia,
   upsertBangGia,
   getBangGiaByNhaKhoa,
   deleteBangGia,
@@ -10,6 +11,9 @@ const {
 const { verifyToken } = require("../middleware/authMiddleware");
 
 /* ================= ROUTES ================= */
+
+// lấy tất cả bảng giá từ tất cả nha khoa
+router.get("/", verifyToken, getAllBangGia);
 
 // lấy bảng giá theo nha khoa
 router.get("/nha-khoa/:nhaKhoaId", verifyToken, getBangGiaByNhaKhoa);

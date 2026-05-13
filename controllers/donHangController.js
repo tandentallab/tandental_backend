@@ -2,6 +2,32 @@ const DonHang = require("../models/DonHang");
 const BenhNhan = require("../models/BenhNhan");
 const NguoiLienHe = require("../models/NguoiLienHe");
 
+const buildOrderCodePrefix = (date = new Date()) => {
+    const yy = String(date.getFullYear()).slice(-2);
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    return `TAN${yy}${mm}`;
+};
+
+const generateMaDonHang = async () => {
+    const prefix = buildOrderCodePrefix();
+    const regex = new RegExp(`^${prefix}\\d{4}$`);
+
+    const latest = await DonHang.findOne({ maDonHang: { $regex: regex } })
+        .sort({ maDonHang: -1 })
+        .select("maDonHang")
+        .lean();
+
+    let nextSequence = 0;
+    if (latest?.maDonHang) {
+        const lastSeq = Number(latest.maDonHang.slice(-4));
+        if (Number.isFinite(lastSeq)) {
+            nextSequence = lastSeq + 1;
+        }
+    }
+
+    return `${prefix}${String(nextSequence).padStart(4, "0")}`;
+};
+
 // [POST] Tạo đơn hàng mới
 exports.createDonHang = async (req, res) => {
     try {
@@ -18,13 +44,35 @@ exports.createDonHang = async (req, res) => {
             return res.status(400).json({ success: false, message: "Bác sĩ không thuộc Nha khoa này" });
         }
 
-        const newDonHang = new DonHang(req.body);
-        await newDonHang.save();
+        // Sinh mã theo chuẩn: TAN + YY + MM + 4 số tăng dần trong tháng
+        let maDonHang = await generateMaDonHang();
+        let retry = 0;
 
-        res.status(201).json({
-            success: true,
-            message: "Tạo đơn hàng thành công",
-            data: newDonHang,
+        while (retry < 3) {
+            try {
+                const newDonHang = new DonHang({
+                    ...req.body,
+                    maDonHang,
+                });
+                await newDonHang.save();
+
+                return res.status(201).json({
+                    success: true,
+                    message: "Tạo đơn hàng thành công",
+                    data: newDonHang,
+                });
+            } catch (saveError) {
+                if (saveError?.code !== 11000 || !saveError?.keyPattern?.maDonHang) {
+                    throw saveError;
+                }
+                retry += 1;
+                maDonHang = await generateMaDonHang();
+            }
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: "Không thể sinh mã đơn hàng duy nhất. Vui lòng thử lại.",
         });
     } catch (error) {
         res.status(500).json({
@@ -82,7 +130,7 @@ exports.getDonHangById = async (req, res) => {
 // [PUT] Cập nhật đơn hàng
 exports.updateDonHang = async (req, res) => {
     try {
-        const updatedDonHang = await DonHang.findByIdAndUpdate(req.params.id, req.body, { new: true })
+        const updatedDonHang = await DonHang.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' })
             .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe")
             .populate("bacSi", "hoVaTen soDienThoai email")
             .populate("benhNhan", "hoVaTen soHoSo soDienThoai")

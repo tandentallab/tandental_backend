@@ -1,6 +1,36 @@
 const BangGia = require("../models/bangGia");
 const SanPham = require("../models/SanPham");
 
+/* ================= GET ALL BẢNG GIÁ ================= */
+// Lấy tất cả bảng giá từ tất cả nha khoa
+exports.getAllBangGia = async (req, res) => {
+  try {
+    const sanPhams = await SanPham.find();
+
+    const bangGia = await BangGia.find();
+
+    const mapGia = {};
+    bangGia.forEach((item) => {
+      mapGia[item.sanPhamId.toString()] = item.donGia;
+    });
+
+    const result = sanPhams.map((sp) => {
+      return {
+        sanPhamId: sp._id,
+        tenSanPham: sp.tenSanPham,
+        loaiTinh: sp.loaiTinh,
+        loaiSanPham: sp.loaiSanPham,
+        nhomSanPham: sp.nhomSanPham,
+        donGia: mapGia[sp._id.toString()] || sp.donGiaChung,
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 /* ================= UPSERT ================= */
 // tạo hoặc cập nhật giá
 exports.upsertBangGia = async (req, res) => {

@@ -46,7 +46,7 @@ const updateNhaCungCap = async (req, res) => {
   try {
     const { id } = req.params;
     const payload = req.body;
-    const updated = await NhaCungCap.findByIdAndUpdate(id, payload, { new: true });
+    const updated = await NhaCungCap.findByIdAndUpdate(id, payload, { returnDocument: 'after' });
     if (!updated) return res.status(404).json({ message: "Not found" });
     return res.json(updated);
   } catch (error) {
@@ -59,7 +59,7 @@ const updateNhaCungCap = async (req, res) => {
 const softDeleteNhaCungCap = async (req, res) => {
   try {
     const { id } = req.params;
-    const updated = await NhaCungCap.findByIdAndUpdate(id, { is_actived: false }, { new: true });
+    const updated = await NhaCungCap.findByIdAndUpdate(id, { is_actived: false }, { returnDocument: 'after' });
     if (!updated) return res.status(404).json({ message: "Not found" });
     return res.json({ message: "Deleted", item: updated });
   } catch (error) {

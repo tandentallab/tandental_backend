@@ -19,6 +19,7 @@ const quyenSuDungRoutes = require("./routes/quyenSuDungRoutes");
 const congTyRoutes = require("./routes/congTyRoutes");
 const nhaCungCapRoutes = require("./routes/nhaCungCapRoutes");
 const phieuBaoHanhRoutes = require("./routes/phieuBaoHanhRoutes");
+const publicRoutes = require("./routes/publicRoutes");
 const baoCaoRoutes = require('./routes/baoCaoRoutes');
 const phieuThuRoutes = require("./routes/phieuThuRoutes");
 const dashboardRoutes = require('./routes/dashboardRoutes');
@@ -28,7 +29,24 @@ const bangLuongRoutes = require("./routes/bangLuongRoutes");
 
 const app = express();
 
-app.use(cors());
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  process.env.ADMIN_FRONTEND_URL,
+  process.env.PUBLIC_FRONTEND_URL,
+].filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // test
@@ -63,6 +81,7 @@ const startServer = async () => {
     app.use("/api/cong-ty", congTyRoutes);
     app.use("/api/nha-cung-cap", nhaCungCapRoutes);
     app.use("/api/phieu-bao-hanh", phieuBaoHanhRoutes);
+    app.use("/api/public", publicRoutes);
     app.use("/api/phieu-thu", phieuThuRoutes);
     app.use("/api/baocao", baoCaoRoutes);
     app.use("/api/nhan-vien", nhanVienRoutes);

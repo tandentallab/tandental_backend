@@ -17,6 +17,12 @@ const donHangSchema = new mongoose.Schema(
             ref: "BenhNhan",
             required: [true, "Vui lòng chọn Bệnh nhân"],
         },
+        maDonHang: {
+            type: String,
+            unique: true,
+            index: true,
+            trim: true,
+        },
 
         // Mảng nhúng Danh sách sản phẩm
         danhSachSanPham: [

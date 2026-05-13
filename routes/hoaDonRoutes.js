@@ -28,14 +28,16 @@ router.get(
   hoaDonController.countDonHangChuaXuatHoaDonAll
 );
 
-
+// Lấy đơn hàng chưa xuất hóa đơn - tất cả nha khoa (PHẢI ĐẶT TRƯỚC :nhaKhoaId)
+router.get(
+  "/don-hang-chua-xuat/all",
+  hoaDonController.getDonHangChuaXuatHoaDonAll
+);
 
 // Lấy danh sách hóa đơn theo nha khoa
 router.get("/nha-khoa/:nhaKhoaId", hoaDonController.getAllHoaDon);
 
-router.get("/:id", hoaDonController.getHoaDonById);
-
-// Lấy đơn hàng chưa xuất hóa đơn
+// Lấy đơn hàng chưa xuất hóa đơn - nha khoa cụ thể
 router.get(
   "/don-hang-chua-xuat/:nhaKhoaId",
   hoaDonController.getDonHangChuaXuatHoaDon

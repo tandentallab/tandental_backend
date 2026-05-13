@@ -119,19 +119,10 @@ hoaDonSchema.pre("save", async function () {
 
   const now = new Date();
 
-  // yy
-  const yy = now
-    .getFullYear()
-    .toString()
-    .slice(-2);
-
-  // mm
-  const mm = String(
-    now.getMonth() + 1
-  ).padStart(2, "0");
-
-  // prefix yymm
-  const prefix = `${yy}${mm}`;
+  // TAN + yy + mm
+  const yy = now.getFullYear().toString().slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const prefix = `TAN${yy}${mm}`;
 
   // tìm số hóa đơn lớn nhất tháng hiện tại
   const lastHoaDon = await mongoose
@@ -143,23 +134,22 @@ hoaDonSchema.pre("save", async function () {
     })
     .sort({ soHoaDon: -1 });
 
-  let nextNumber = 1;
+  let nextNumber = 0;
 
   if (lastHoaDon?.soHoaDon) {
     const lastNumber = parseInt(
       lastHoaDon.soHoaDon.slice(-4)
     );
 
-    nextNumber = lastNumber + 1;
+    if (Number.isFinite(lastNumber)) {
+      nextNumber = lastNumber + 1;
+    }
   }
 
-  // abcd
-  const abcd = String(nextNumber).padStart(
-    4,
-    "0"
-  );
+  // ABCD
+  const abcd = String(nextNumber).padStart(4, "0");
 
-  this.soHoaDon = `HD${prefix}${abcd}`;
+  this.soHoaDon = `${prefix}${abcd}`;
 });
 
 module.exports = mongoose.model(

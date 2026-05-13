@@ -26,7 +26,7 @@ exports.updateNhaKhoa = async (req, res) => {
       id,
       req.body,
       {
-        new: true, // trả về dữ liệu sau khi update
+        returnDocument: 'after', // trả về dữ liệu sau khi update
         runValidators: true, // chạy validate schema
       }
     );

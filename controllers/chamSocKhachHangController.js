@@ -44,7 +44,7 @@ exports.updateChamSoc = async (req, res) => {
     const data = await ChamSocKhachHang.findByIdAndUpdate(
       req.params.id,
       payload,
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
 
     if (!data) {

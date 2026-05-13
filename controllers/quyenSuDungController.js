@@ -18,7 +18,7 @@ exports.restoreQuyenSuDung = async (req, res) => {
     const quyen = await QuyenSuDung.findByIdAndUpdate(
       id,
       { isActive: true },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!quyen) {
@@ -108,7 +108,7 @@ exports.updateQuyenSuDung = async (req, res) => {
     const quyen = await QuyenSuDung.findByIdAndUpdate(
       id,
       { ten, moTa },
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
 
     if (!quyen) {
@@ -132,7 +132,7 @@ exports.deleteQuyenSuDung = async (req, res) => {
     const quyen = await QuyenSuDung.findByIdAndUpdate(
       id,
       { isActive: false },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!quyen) {
