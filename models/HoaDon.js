@@ -2,6 +2,10 @@ const mongoose = require("mongoose");
 
 const hoaDonSchema = new mongoose.Schema(
   {
+    soHoaDon: {
+      type: String,
+      unique: true,
+    },
 
     nhaKhoa: {
       type: mongoose.Schema.Types.ObjectId,
@@ -16,22 +20,28 @@ const hoaDonSchema = new mongoose.Schema(
           ref: "DonHang",
           required: true,
         },
+
         tongTien: Number,
+
         chietKhau: {
           type: Number,
           default: 0,
         },
+
         loaiChietKhau: {
           type: String,
           enum: ["phanTram", "tienMat"],
           default: "tienMat",
         },
+
         thanhTienSauCK: Number,
       },
     ],
 
     tongTien: Number,
+
     tongChietKhau: Number,
+
     thanhTien: Number,
 
     ngayXuatHoaDon: {
@@ -49,41 +59,110 @@ const hoaDonSchema = new mongoose.Schema(
       default: 0,
     },
 
-     thue: {
+    thue: {
       type: Number,
       default: 0,
     },
 
-     chiPhiKhac: {
+    chiPhiKhac: {
       type: Number,
       default: 0,
     },
 
     trangThai: {
       type: String,
-      enum: ["Chưa thanh toán", "Thanh toán một phần", "Đã thanh toán"],
+      enum: [
+        "Chưa thanh toán",
+        "Thanh toán một phần",
+        "Đã thanh toán",
+      ],
       default: "Chưa thanh toán",
     },
 
     chinhSachThanhToan: {
       type: String,
-      enum: ["Thanh toán trước", "Thanh toán trong 7 ngày", "Thanh toán trong 10 ngày"
-        , "Thanh toán trong 30 ngày", "Thanh toán trong 60 ngày", "Thanh toán trong 90 ngày"
-        , "Thanh toán cuối tháng", "Thanh toán ngay"
+      enum: [
+        "Thanh toán trước",
+        "Thanh toán trong 7 ngày",
+        "Thanh toán trong 10 ngày",
+        "Thanh toán trong 30 ngày",
+        "Thanh toán trong 60 ngày",
+        "Thanh toán trong 90 ngày",
+        "Thanh toán cuối tháng",
+        "Thanh toán ngay",
       ],
       default: "Thanh toán cuối tháng",
     },
+
     ghiChuChoKhachHang: {
       type: String,
       default: "",
     },
+
     ghiChuNoiBo: {
       type: String,
       default: "",
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-// ✅ BẮT BUỘC PHẢI CÓ
-module.exports = mongoose.model("HoaDon", hoaDonSchema);
+/* ================= TỰ ĐỘNG TẠO SỐ HÓA ĐƠN ================= */
+
+hoaDonSchema.pre("save", async function () {
+  // chỉ tạo khi thêm mới
+  if (!this.isNew || this.soHoaDon) {
+    return;
+  }
+
+  const now = new Date();
+
+  // yy
+  const yy = now
+    .getFullYear()
+    .toString()
+    .slice(-2);
+
+  // mm
+  const mm = String(
+    now.getMonth() + 1
+  ).padStart(2, "0");
+
+  // prefix yymm
+  const prefix = `${yy}${mm}`;
+
+  // tìm số hóa đơn lớn nhất tháng hiện tại
+  const lastHoaDon = await mongoose
+    .model("HoaDon")
+    .findOne({
+      soHoaDon: {
+        $regex: `^${prefix}`,
+      },
+    })
+    .sort({ soHoaDon: -1 });
+
+  let nextNumber = 1;
+
+  if (lastHoaDon?.soHoaDon) {
+    const lastNumber = parseInt(
+      lastHoaDon.soHoaDon.slice(-4)
+    );
+
+    nextNumber = lastNumber + 1;
+  }
+
+  // abcd
+  const abcd = String(nextNumber).padStart(
+    4,
+    "0"
+  );
+
+  this.soHoaDon = `HD${prefix}${abcd}`;
+});
+
+module.exports = mongoose.model(
+  "HoaDon",
+  hoaDonSchema
+);

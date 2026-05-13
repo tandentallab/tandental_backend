@@ -23,6 +23,12 @@ router.get(
   hoaDonController.thongKeCongNoHoaDon
 );
 
+router.get(
+  "/count-don-hang-chua-xuat",
+  hoaDonController.countDonHangChuaXuatHoaDonAll
+);
+
+
 
 // Lấy danh sách hóa đơn theo nha khoa
 router.get("/nha-khoa/:nhaKhoaId", hoaDonController.getAllHoaDon);
@@ -34,6 +40,7 @@ router.get(
   "/don-hang-chua-xuat/:nhaKhoaId",
   hoaDonController.getDonHangChuaXuatHoaDon
 );
+
 
 // Cập nhật hóa đơn & Thanh toán (Sử dụng daThanhToan để cập nhật số dư)
 router.put("/:id", hoaDonController.updateHoaDon);
