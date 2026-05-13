@@ -151,10 +151,6 @@ hoaDonSchema.pre("save", async function () {
 
 /* ================= INDEX ================= */
 
-hoaDonSchema.index(
-  { soHoaDon: 1 },
-  { unique: true }
-);
 
 hoaDonSchema.index({
   nhaKhoa: 1,
