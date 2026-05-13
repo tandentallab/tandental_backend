@@ -94,30 +94,18 @@ exports.checkWarranty = async (req, res) => {
       });
     }
 
-    // Build search variants: exact, with 'TAN' prefix, with 'TANBH' prefix, QR
+    // Build search variants
     const variants = [code];
     if (code && !code.toUpperCase().startsWith("TAN")) {
       variants.push(`TAN${code}`);
       variants.push(`TANBH${code}`);
     }
 
-    // Escape regex special chars
     const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Match code anywhere in maBaoHanh (case-insensitive)
     const regex = new RegExp(escapeRegex(code), "i");
 
-    // Debug: log search variants to help diagnose missing matches
-    console.log("[checkWarranty] search variants:", variants);
-
-    // For debugging: count matching maBaoHanh exact matches
-    const countExact = await PhieuBaoHanh.countDocuments({ maBaoHanh: { $in: variants } });
-    console.log('[checkWarranty] countExact maBaoHanh in variants:', countExact);
-    if (countExact > 0) {
-      const matched = await PhieuBaoHanh.find({ maBaoHanh: { $in: variants } }).lean();
-      console.log('[checkWarranty] matched docs by exact maBaoHanh:', matched.map(d=>({ _id: d._id, maBaoHanh: d.maBaoHanh })));
-    }
-
-    const phieu = await PhieuBaoHanh.findOne({
+    // Tìm kiếm phiếu bảo hành
+    let phieu = await PhieuBaoHanh.findOne({
       $or: [
         { maBaoHanh: { $in: variants } },
         { maQR: code },
@@ -131,15 +119,12 @@ exports.checkWarranty = async (req, res) => {
       .populate("bacSi", "hoVaTen")
       .populate({ path: "danhSachBaoHanh.sanPham", select: "tenSanPham" });
 
-    console.log("[checkWarranty] found phieu:", phieu);
-
     if (!phieu) {
       // Fallback: tìm theo mã đơn hàng trong collection DonHang
       try {
         const DonHang = require("../models/DonHang");
-        console.log("[checkWarranty] trying fallback search in DonHang by maDonHang variants...");
         const donHangRecord = await DonHang.findOne({ maDonHang: { $in: variants } });
-        console.log("[checkWarranty] donHangRecord:", donHangRecord ? donHangRecord._id : null);
+        
         if (donHangRecord) {
           phieu = await PhieuBaoHanh.findOne({ donHang: donHangRecord._id })
             .populate("donHang")
@@ -149,7 +134,7 @@ exports.checkWarranty = async (req, res) => {
             .populate("sanPham", "tenSanPham");
         }
       } catch (err) {
-        console.error("[checkWarranty] fallback DonHang search error:", err.message);
+        // Silent error for fallback
       }
 
       if (!phieu) {
