@@ -18,6 +18,12 @@ const donHangSchema = new mongoose.Schema(
             required: [true, "Vui lòng chọn Bệnh nhân"],
         },
 
+        maDonHang: {
+            type: String,
+            unique: true,
+            sparse: true,
+        },
+
         // Mảng nhúng Danh sách sản phẩm
         danhSachSanPham: [
             {
@@ -54,6 +60,16 @@ const donHangSchema = new mongoose.Schema(
                 },
                 mau: String,
                 ghiChu: String,
+                trangThaiCongDoan: [
+                    {
+                        thuTu: { type: Number, required: true },
+                        trangThai: {
+                            type: String,
+                            enum: ["Chưa sẵn sàng", "Chờ sản xuất"],
+                            default: "Chưa sẵn sàng",
+                        },
+                    },
+                ],
             },
         ],
 

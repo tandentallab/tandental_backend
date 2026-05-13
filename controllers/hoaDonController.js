@@ -45,9 +45,9 @@ exports.countDonHangChuaXuatHoaDonAll = async (
             _id: "$nhaKhoa",
 
             soDonHangChuaXuatHoaDon:
-              {
-                $sum: 1,
-              },
+            {
+              $sum: 1,
+            },
 
             // 🔥 ngày nhận đơn hàng gần nhất chưa xuất
             ngayDonHangGanNhat: {
@@ -298,7 +298,16 @@ exports.createHoaDon = async (req, res) => {
 
     const conLai = thanhTien;
 
+    // Sinh soHoaDon theo format TANyymm0000
+    const ngayXuat = new Date();
+    const yyHD = String(ngayXuat.getFullYear()).slice(-2);
+    const mmHD = String(ngayXuat.getMonth() + 1).padStart(2, "0");
+    const prefixHD = `TAN${yyHD}${mmHD}`;
+    const countHD = await HoaDon.countDocuments({ soHoaDon: { $regex: `^${prefixHD}` } });
+    const soHoaDon = `${prefixHD}${String(countHD + 1).padStart(4, "0")}`;
+
     const hoaDon = new HoaDon({
+      soHoaDon,
       nhaKhoa: nhaKhoaId,
 
       danhSachDonHang: resultDonHang,
@@ -452,7 +461,7 @@ exports.getAllHoaDonAdmin = async (req, res) => {
       .populate({
         path: "danhSachDonHang.donHang",
 
-        select: "_id danhSachSanPham",
+        select: "_id maDonHang danhSachSanPham",
 
         populate: {
           path: "danhSachSanPham.sanPham",
@@ -934,7 +943,7 @@ exports.getHoaDonChuaThanhToanByNhaKhoa = async (req, res) => {
       nhaKhoa: nhaKhoaId,
       trangThai: { $in: ["Chưa thanh toán", "Thanh toán một phần"] },
     })
-      .select("_id ngayXuatHoaDon thanhTien daThanhToan conLai trangThai")
+      .select("_id soHoaDon ngayXuatHoaDon thanhTien daThanhToan conLai trangThai")
       .sort({ ngayXuatHoaDon: -1 });
 
     res.json({ success: true, data: danhSach });
