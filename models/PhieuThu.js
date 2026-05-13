@@ -8,11 +8,13 @@ const phieuThuSchema = new mongoose.Schema(
       index: true,
     },
 
-    hoaDon: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "HoaDon",
-      required: true,
-    },
+    // Hỗ trợ nhiều hóa đơn trong một phiếu thu
+    danhSachHoaDon: [
+      {
+        hoaDon: { type: mongoose.Schema.Types.ObjectId, ref: "HoaDon" },
+        soTienThanhToan: { type: Number, default: 0 },
+      },
+    ],
 
     nguoiTao: {
       type: mongoose.Schema.Types.ObjectId,

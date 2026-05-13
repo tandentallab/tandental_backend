@@ -21,8 +21,14 @@ exports.getAllPhieuThu = async (req, res) => {
     }
 
     pipeline.push(
-      { $lookup: { from: "hoadons", localField: "hoaDon", foreignField: "_id", as: "hoaDonInfo" } },
-      { $unwind: { path: "$hoaDonInfo", preserveNullAndEmptyArrays: true } },
+      {
+        $addFields: {
+          _hoaDonIds: "$danhSachHoaDon.hoaDon",
+        },
+      },
+      { $lookup: { from: "hoadons", localField: "_hoaDonIds", foreignField: "_id", as: "hoaDonInfoList" } },
+      // hoaDonInfo = phần tử đầu tiên (để lấy nhaKhoa, backward compat)
+      { $addFields: { hoaDonInfo: { $arrayElemAt: ["$hoaDonInfoList", 0] } } },
       { $lookup: { from: "nhakhoas", localField: "hoaDonInfo.nhaKhoa", foreignField: "_id", as: "nhaKhoaInfo" } },
       { $unwind: { path: "$nhaKhoaInfo", preserveNullAndEmptyArrays: true } },
     );
@@ -51,8 +57,38 @@ exports.getAllPhieuThu = async (req, res) => {
 
     pipeline.push({ $sort: { createdAt: -1 } });
 
+    // Enrich danhSachHoaDon with full hoaDon details (chỉ cho data pipeline, sau skip/limit để nhẹ)
     const countPipeline = [...pipeline, { $count: "total" }];
-    const dataPipeline = [...pipeline, { $skip: skip }, { $limit: limit }];
+    const dataPipeline = [
+      ...pipeline,
+      { $skip: skip },
+      { $limit: limit },
+      {
+        $addFields: {
+          danhSachHoaDon: {
+            $map: {
+              input: { $ifNull: ["$danhSachHoaDon", []] },
+              as: "item",
+              in: {
+                soTienThanhToan: "$$item.soTienThanhToan",
+                hoaDon: {
+                  $arrayElemAt: [
+                    {
+                      $filter: {
+                        input: { $ifNull: ["$hoaDonInfoList", []] },
+                        as: "hd",
+                        cond: { $eq: ["$$hd._id", "$$item.hoaDon"] },
+                      },
+                    },
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    ];
 
     const [countResult, data] = await Promise.all([
       PhieuThu.aggregate(countPipeline),
@@ -77,48 +113,52 @@ exports.getAllPhieuThu = async (req, res) => {
 exports.createPhieuThu = async (req, res) => {
   try {
     const {
-      hoaDon,
+      danhSachHoaDon, // [{ hoaDon: id, soTienThanhToan: number }, ...]
       ngayThu,
-      soTienThu,
       noiDung,
       phuongThucThanhToan,
-      nguoiTao,
     } = req.body;
 
-    const hd = await HoaDon.findById(hoaDon);
-    if (!hd) {
-      return res.status(404).json({ message: "Không tìm thấy hóa đơn" });
+    if (!danhSachHoaDon || !danhSachHoaDon.length) {
+      return res.status(400).json({ success: false, message: "Vui lòng chọn ít nhất một hóa đơn" });
     }
 
-    let tongThanhToan = soTienThu;
+    let tongTienThu = 0;
+    let tongConThua = 0;
+    let tongDuocKhauTru = 0;
+    const danhSachLuu = [];
 
+    // Cập nhật từng hóa đơn
+    for (const item of danhSachHoaDon) {
+      const hd = await HoaDon.findById(item.hoaDon);
+      if (!hd) continue;
 
-    let conThua = 0;
+      let soTien = Number(item.soTienThanhToan) || 0;
+      let conThua = 0;
+      if (soTien > hd.conLai) {
+        conThua = soTien - hd.conLai;
+        soTien = hd.conLai;
+      }
 
-    // 🔥 nếu trả quá
-    if (tongThanhToan > hd.conLai) {
-      conThua = tongThanhToan - hd.conLai;
-      tongThanhToan = hd.conLai;
+      hd.daThanhToan += soTien;
+      hd.conLai -= soTien;
+      if (hd.conLai <= 0) {
+        hd.conLai = 0;
+        hd.trangThai = "Đã thanh toán";
+      } else if (hd.daThanhToan > 0) {
+        hd.trangThai = "Thanh toán một phần";
+      } else {
+        hd.trangThai = "Chưa thanh toán";
+      }
+      await hd.save();
+
+      tongTienThu += soTien;
+      tongConThua += conThua;
+      tongDuocKhauTru += soTien;
+      danhSachLuu.push({ hoaDon: item.hoaDon, soTienThanhToan: soTien });
     }
 
-    // 🔥 cập nhật hóa đơn
-    hd.daThanhToan += tongThanhToan;
-    hd.conLai -= tongThanhToan;
-
-    if (hd.conLai <= 0) {
-      hd.conLai = 0;
-      hd.trangThai = "Đã thanh toán";
-    } else if (hd.daThanhToan > 0) {
-      hd.trangThai = "Thanh toán một phần";
-    } else {
-      hd.trangThai = "Chưa thanh toán";
-    }
-
-    await hd.save();
-
-    let duocKhauTru = soTienThu - conThua
-
-    // Generate soPhieuThu theo format TANyymm0000, đếm theo ngayThu
+    // Generate soPhieuThu
     const ngayThuDate = new Date(ngayThu || Date.now());
     const yy = String(ngayThuDate.getFullYear()).slice(-2);
     const mm = String(ngayThuDate.getMonth() + 1).padStart(2, "0");
@@ -127,20 +167,22 @@ exports.createPhieuThu = async (req, res) => {
     const soPhieuThu = `${prefix}${String(count + 1).padStart(4, "0")}`;
 
     const phieuThu = await PhieuThu.create({
+<<<<<<< HEAD
       hoaDon,
+=======
+      soPhieuThu,
+      danhSachHoaDon: danhSachLuu,
+>>>>>>> origin/sang
       nguoiTao: req.user?.id || req.user?._id || null,
       ngayThu,
-      soTienThu,
-      duocKhauTru,
-      conThua,
+      soTienThu: tongTienThu + tongConThua, // giữ tổng người nộp (kể cả thừa)
+      duocKhauTru: tongDuocKhauTru,
+      conThua: tongConThua,
       noiDung,
       phuongThucThanhToan,
     });
 
-    res.json({
-      success: true,
-      data: phieuThu,
-    });
+    res.json({ success: true, data: phieuThu });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -173,24 +215,20 @@ exports.getPhieuThuById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const phieuThu = await PhieuThu.findById(id)
-      .populate({
-        path: "hoaDon",
+    const hoaDonPopulate = [
+      { path: "nhaKhoa", select: "hoVaTen tenGiaoDich soDienThoai email moTa diaChiCuThe quanHuyen tinh quocGia" },
+      {
+        path: "danhSachDonHang.donHang",
+        select: "bacSi benhNhan",
         populate: [
-          {
-            path: "nhaKhoa",
-            select: "hoVaTen tenGiaoDich soDienThoai email moTa diaChiCuThe quanHuyen tinh quocGia",
-          },
-          {
-            path: "danhSachDonHang.donHang",
-            select: "maDonHang bacSi benhNhan",
-            populate: [
-              { path: "bacSi", select: "hoVaTen" },
-              { path: "benhNhan", select: "hoVaTen soDienThoai" },
-            ],
-          },
+          { path: "bacSi", select: "hoVaTen" },
+          { path: "benhNhan", select: "hoVaTen soDienThoai" },
         ],
-      })
+      },
+    ];
+
+    const phieuThu = await PhieuThu.findById(id)
+      .populate({ path: "danhSachHoaDon.hoaDon", populate: hoaDonPopulate })
       .populate("nguoiTao", "hoVaTen HoTenNV");
 
     if (!phieuThu) {
