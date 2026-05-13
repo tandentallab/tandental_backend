@@ -7,7 +7,9 @@ dayjs.extend(timezone);
 
 const DonHang = require("../models/DonHang");
 const SanPham = require("../models/SanPham");
-
+const HoaDon = require("../models/HoaDon");
+const PhieuThu = require("../models/PhieuThu");
+const NhaKhoa = require("../models/NhaKhoa");
 const VN_TZ = "Asia/Ho_Chi_Minh"; // UTC+7
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,5 +149,116 @@ exports.getDetailedProductReport = async (req, res) => {
         res.status(200).json({ success: true, data: reportData });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+exports.getDoanhThuThang = async (req, res) => {
+    try {
+        const thang = parseInt(req.query.thang) || new Date().getMonth() + 1;
+        const nam = parseInt(req.query.nam) || new Date().getFullYear();
+
+        const startOfMonth = dayjs
+            .tz(`${nam}-${String(thang).padStart(2, "0")}-01`, VN_TZ)
+            .startOf("day")
+            .toDate();
+        const endOfMonth = dayjs(startOfMonth)
+            .tz(VN_TZ)
+            .endOf("month")
+            .toDate();
+
+        // ── 1. HoaDon: trước tháng + trong tháng ────────────────────────────
+        const [hdFacet] = await HoaDon.aggregate([
+            {
+                $facet: {
+                    trongThang: [
+                        { $match: { ngayXuatHoaDon: { $gte: startOfMonth, $lte: endOfMonth } } },
+                        { $group: { _id: "$nhaKhoa", phatSinh: { $sum: "$thanhTien" } } },
+                    ],
+                    truocThang: [
+                        { $match: { ngayXuatHoaDon: { $lt: startOfMonth } } },
+                        { $group: { _id: "$nhaKhoa", tong: { $sum: "$thanhTien" } } },
+                    ],
+                },
+            },
+        ]);
+
+        // ── 2. PhieuThu: join HoaDon → lấy nhaKhoa ──────────────────────────
+        const [ptFacet] = await PhieuThu.aggregate([
+            {
+                $lookup: {
+                    from: "hoadons",
+                    localField: "hoaDon",
+                    foreignField: "_id",
+                    as: "hd",
+                },
+            },
+            { $unwind: "$hd" },
+            {
+                $facet: {
+                    trongThang: [
+                        { $match: { ngayThu: { $gte: startOfMonth, $lte: endOfMonth } } },
+                        { $group: { _id: "$hd.nhaKhoa", thanhToan: { $sum: "$duocKhauTru" } } },
+                    ],
+                    truocThang: [
+                        { $match: { ngayThu: { $lt: startOfMonth } } },
+                        { $group: { _id: "$hd.nhaKhoa", tong: { $sum: "$duocKhauTru" } } },
+                    ],
+                },
+            },
+        ]);
+
+        // ── 3. Map để tra O(1) ───────────────────────────────────────────────
+        const toMap = (arr) =>
+            arr.reduce((m, x) => { m[x._id?.toString()] = x; return m; }, {});
+
+        const hdTrong = toMap(hdFacet.trongThang);
+        const hdTruoc = toMap(hdFacet.truocThang);
+        const ptTrong = toMap(ptFacet.trongThang);
+        const ptTruoc = toMap(ptFacet.truocThang);
+
+        // ── 4. Gộp tất cả NhaKhoa có dữ liệu ────────────────────────────────
+        const allIds = new Set([
+            ...hdFacet.trongThang, ...hdFacet.truocThang,
+            ...ptFacet.trongThang, ...ptFacet.truocThang,
+        ].map(x => x._id?.toString()).filter(Boolean));
+
+        const nhaKhoaList = await NhaKhoa.find(
+            { _id: { $in: [...allIds] } },
+            "tenGiaoDich hoVaTen"
+        ).lean();
+
+        const nkMap = nhaKhoaList.reduce((m, x) => { m[x._id.toString()] = x; return m; }, {});
+
+        // ── 5. Tính từng dòng ────────────────────────────────────────────────
+        let tongNoDauKy = 0, tongPhatSinh = 0, tongThanhToan = 0, tongConNo = 0;
+
+        const chiTiet = [...allIds]
+            .map((id) => {
+                const tenNhaKhoa = nkMap[id]?.tenGiaoDich || nkMap[id]?.hoVaTen || "—";
+                const noDauKy = (hdTruoc[id]?.tong || 0) - (ptTruoc[id]?.tong || 0);
+                const phatSinh = hdTrong[id]?.phatSinh || 0;
+                const thanhToan = ptTrong[id]?.thanhToan || 0;
+                const conNo = noDauKy + phatSinh - thanhToan;
+
+                tongNoDauKy += noDauKy;
+                tongPhatSinh += phatSinh;
+                tongThanhToan += thanhToan;
+                tongConNo += conNo;
+
+                return { nhaKhoaId: id, tenNhaKhoa, noDauKy, phatSinh, thanhToan, conNo };
+            })
+            .filter(r => r.noDauKy || r.phatSinh || r.thanhToan || r.conNo)
+            .sort((a, b) => a.tenNhaKhoa.localeCompare(b.tenNhaKhoa, "vi"))
+            .map((r, i) => ({ ...r, stt: i + 1 }));
+
+        res.json({
+            success: true,
+            thang,
+            nam,
+            tongHop: { noDauKy: tongNoDauKy, phatSinh: tongPhatSinh, thanhToan: tongThanhToan, conNo: tongConNo },
+            chiTiet,
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
     }
 };

@@ -4,4 +4,7 @@ const baoCaoController = require('../controllers/baoCaoController'); // Đườn
 
 router.get('/top-products', baoCaoController.getTopProductsReport);
 router.get("/detailed-report", baoCaoController.getDetailedProductReport);
+router.get('/doanh-thu-thang', baoCaoController.getDoanhThuThang);
+
+
 module.exports = router;

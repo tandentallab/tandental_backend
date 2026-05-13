@@ -143,13 +143,13 @@ exports.getChartStats = async (req, res) => {
 
             const currentPeriod = await PhieuThu.aggregate([
                 { $match: { ngayThu: { $gte: start, $lte: end } } },
-                { $group: { _id: { sortKey, displayDate }, total: { $sum: "$soTienThu" } } },
+                { $group: { _id: { sortKey, displayDate }, total: { $sum: "$duocKhauTru" } } }, // ✅
                 { $sort: { "_id.sortKey": 1 } }
             ]);
 
             const previousPeriod = await PhieuThu.aggregate([
                 { $match: { ngayThu: { $gte: prevStart, $lte: prevEnd } } },
-                { $group: { _id: { sortKey, displayDate }, total: { $sum: "$soTienThu" } } },
+                { $group: { _id: { sortKey, displayDate }, total: { $sum: "$duocKhauTru" } } }, // ✅
                 { $sort: { "_id.sortKey": 1 } }
             ]);
 
@@ -190,6 +190,34 @@ exports.getChartStats = async (req, res) => {
                     });
                 }
             }
+        } else if (chartType === "chart4") {
+            const HoaDon = require('../models/HoaDon');
+            const { sortKey, displayDate } = buildDateGroup(groupBy, "$ngayXuatHoaDon");
+
+            resultData = await HoaDon.aggregate([
+                { $match: { ngayXuatHoaDon: { $gte: start, $lte: end } } },
+                {
+                    $group: {
+                        _id: { sortKey, displayDate },
+                        tongGhiNhan: { $sum: "$thanhTien" },
+                        tongDaThu: { $sum: "$daThanhToan" },
+                        tongConLai: { $sum: "$conLai" },
+                    }
+                },
+                { $sort: { "_id.sortKey": 1 } },
+                {
+                    $replaceRoot: {
+                        newRoot: {
+                            $mergeObjects: [
+                                { date: "$_id.displayDate" },
+                                { "Doanh thu": "$tongGhiNhan" },
+                                { "Đã thu": "$tongDaThu" },
+                                { "Còn nợ": "$tongConLai" },
+                            ]
+                        }
+                    }
+                }
+            ]);
         }
 
         return res.status(200).json({ success: true, data: resultData });
