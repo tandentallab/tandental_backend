@@ -118,6 +118,17 @@ exports.createPhieuThu = async (req, res) => {
 
     let duocKhauTru = soTienThu - conThua
 
+<<<<<<< HEAD
+=======
+    // Generate soPhieuThu theo format TANyymm0000, đếm theo ngayThu
+    const ngayThuDate = new Date(ngayThu || Date.now());
+    const yy = String(ngayThuDate.getFullYear()).slice(-2);
+    const mm = String(ngayThuDate.getMonth() + 1).padStart(2, "0");
+    const prefix = `TAN${yy}${mm}`;
+    const count = await PhieuThu.countDocuments({ soPhieuThu: { $regex: `^${prefix}` } });
+    const soPhieuThu = `${prefix}${String(count + 1).padStart(4, "0")}`;
+
+>>>>>>> origin/hoangquan
     const phieuThu = await PhieuThu.create({
       hoaDon,
       nguoiTao: req.user?.id || req.user?._id || null,

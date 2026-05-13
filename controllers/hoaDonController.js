@@ -4,15 +4,42 @@ const DonHang = require("../models/DonHang");
 const BangGia = require("../models/bangGia");
 const SanPham = require("../models/SanPham");
 
+const roundMoney = (n) =>
+  Math.round(Number(n || 0));
+
+const calculateThanhTien = ({
+  tongTien,
+  tongChietKhau,
+  thue,
+  chiPhiKhac,
+}) => {
+  let thanhTien =
+    Number(tongTien || 0) -
+    Number(tongChietKhau || 0);
+
+  // phí khác
+  thanhTien += Number(
+    chiPhiKhac || 0
+  );
+
+  // thuế %
+  thanhTien +=
+    thanhTien *
+    (Number(thue || 0) / 100);
+
+  return roundMoney(thanhTien);
+};
+
 // ================= LẤY DANH SÁCH ĐƠN HÀNG CHƯA XUẤT HÓA ĐƠN =================
 exports.getDonHangChuaXuatHoaDon = async (req, res) => {
   try {
     const { nhaKhoaId } = req.params;
 
-    const donHangs = await DonHang.find({
+const donHangs = await DonHang.find({
       nhaKhoa: nhaKhoaId,
-      daXuatHoaDon: false,
-      trangThai: "Hoàn thành",
+      daXuatHoaDon: { $ne: true },        // Của Quân: An toàn hơn false
+      trangThai: "Hoàn thành",            // Của Bạn: Chỉ tính tiền đơn đã làm xong
+      "danhSachSanPham.loaiDon": "Mới",   // Của Quân: Không tính tiền đơn Bảo hành/Làm lại
     })
       .populate("bacSi", "hoVaTen")
       .sort({ createdAt: -1 });
@@ -50,8 +77,13 @@ exports.countDonHangChuaXuatHoaDonAll = async (
       await DonHang.aggregate([
         {
           $match: {
-            daXuatHoaDon: false,
-            trangThai: "Hoàn thành",
+            daXuatHoaDon: {
+              $ne: true,
+            },
+
+            // 🔥 chỉ lấy đơn có loaiDon = "Mới"
+            "danhSachSanPham.loaiDon":
+              "Mới",
           },
         },
 
@@ -239,131 +271,217 @@ async function tinhTienDonHang(donHang, nhaKhoaId) {
 }
 
 /* ================= TẠO HÓA ĐƠN ================= */
-exports.createHoaDon = async (req, res) => {
+exports.createHoaDon = async (
+  req,
+  res
+) => {
+  const session =
+    await mongoose.startSession();
+
   try {
-    const {
-      nhaKhoaId,
-      danhSachDonHang,
+    await session.withTransaction(
+      async () => {
+        const {
+          nhaKhoaId,
+          danhSachDonHang,
 
-      thue = 0,
-      chiPhiKhac = 0,
+          thue = 0,
+          chiPhiKhac = 0,
 
-      ghiChuNoiBo = "",
-      ghiChuChoKhachHang = "",
+          ghiChuNoiBo = "",
+          ghiChuChoKhachHang = "",
 
-      chinhSachThanhToan = "Thanh toán cuối tháng",
-    } = req.body;
+          chinhSachThanhToan =
+            "Thanh toán cuối tháng",
+        } = req.body;
 
-    let tongTien = 0;
-    let tongChietKhau = 0;
+        // ===== VALIDATE =====
 
-    const resultDonHang = [];
+        if (
+          !danhSachDonHang ||
+          danhSachDonHang.length === 0
+        ) {
+          throw new Error(
+            "Danh sách đơn hàng trống"
+          );
+        }
 
-    for (const item of danhSachDonHang) {
-      const donHang = await DonHang.findById(
-        item.donHangId
-      );
+        let tongTien = 0;
 
-      if (!donHang) continue;
+        let tongChietKhau = 0;
 
-      // 🔥 Tính tiền theo bảng giá
-      const tongTienDon = await tinhTienDonHang(
-        donHang,
-        nhaKhoaId
-      );
+        const resultDonHang = [];
 
-      let chietKhau = item.chietKhau || 0;
+        for (const item of danhSachDonHang) {
+          const donHang =
+            await DonHang.findById(
+              item.donHangId
+            ).session(session);
 
-      let thanhTienSauCK = tongTienDon;
+          if (!donHang) {
+            throw new Error(
+              "Không tìm thấy đơn hàng"
+            );
+          }
 
-      if (item.loaiChietKhau === "phanTram") {
-        thanhTienSauCK =
-          tongTienDon * (1 - chietKhau / 100);
-      } else {
-        thanhTienSauCK =
-          tongTienDon - chietKhau;
-      }
+          // ===== CHỐNG XUẤT TRÙNG =====
 
-      tongTien += tongTienDon;
+          const updated =
+            await DonHang.updateOne(
+              {
+                _id: donHang._id,
 
-      tongChietKhau +=
-        tongTienDon - thanhTienSauCK;
+                daXuatHoaDon: {
+                  $ne: true,
+                },
+              },
+              {
+                $set: {
+                  daXuatHoaDon: true,
+                },
+              },
+              { session }
+            );
 
-      resultDonHang.push({
-        donHang: donHang._id,
+          if (
+            updated.modifiedCount === 0
+          ) {
+            throw new Error(
+              `Đơn hàng ${donHang._id} đã xuất hóa đơn`
+            );
+          }
 
-        tongTien: tongTienDon,
+          const tongTienDon =
+            await tinhTienDonHang(
+              donHang,
+              nhaKhoaId
+            );
 
-        chietKhau,
+          let chietKhau =
+            Number(
+              item.chietKhau || 0
+            );
 
-        loaiChietKhau:
-          item.loaiChietKhau || "tienMat",
+          if (chietKhau < 0) {
+            throw new Error(
+              "Chiết khấu không hợp lệ"
+            );
+          }
 
-        thanhTienSauCK,
-      });
-    }
+          let thanhTienSauCK =
+            tongTienDon;
 
-    // ✅ Thành tiền cuối cùng
-    const thanhTien =
-      tongTien -
-      tongChietKhau +
-      Number(thue) +
-      Number(chiPhiKhac);
+          if (
+            item.loaiChietKhau ===
+            "phanTram"
+          ) {
+            thanhTienSauCK =
+              tongTienDon *
+              (1 -
+                chietKhau / 100);
+          } else {
+            thanhTienSauCK =
+              tongTienDon -
+              chietKhau;
+          }
 
-    // ✅ Thanh toán ban đầu
-    const daThanhToan = 0;
+          thanhTienSauCK =
+            Math.max(
+              0,
+              thanhTienSauCK
+            );
 
-    const conLai = thanhTien;
+          tongTien += tongTienDon;
 
-    const hoaDon = new HoaDon({
-      nhaKhoa: nhaKhoaId,
+          tongChietKhau +=
+            tongTienDon -
+            thanhTienSauCK;
 
-      danhSachDonHang: resultDonHang,
+          resultDonHang.push({
+            donHang: donHang._id,
 
-      tongTien,
-      tongChietKhau,
-      thanhTien,
+            tongTien:
+              roundMoney(
+                tongTienDon
+              ),
 
-      daThanhToan,
-      conLai,
+            chietKhau,
 
-      thue,
-      chiPhiKhac,
+            loaiChietKhau:
+              item.loaiChietKhau ||
+              "tienMat",
 
-      ghiChuNoiBo,
-      ghiChuChoKhachHang,
+            thanhTienSauCK:
+              roundMoney(
+                thanhTienSauCK
+              ),
+          });
+        }
 
-      chinhSachThanhToan,
-    });
+        const thanhTien =
+          calculateThanhTien({
+            tongTien,
+            tongChietKhau,
+            thue,
+            chiPhiKhac,
+          });
 
-    await hoaDon.save();
+        const hoaDon =
+          await HoaDon.create(
+            [
+              {
+                nhaKhoa:
+                  nhaKhoaId,
 
-    // 🔥 Cập nhật trạng thái đơn hàng
-    await DonHang.updateMany(
-      {
-        _id: {
-          $in: resultDonHang.map((i) => i.donHang),
-        },
-      },
-      {
-        $set: {
-          daXuatHoaDon: true,
-        },
+                danhSachDonHang:
+                  resultDonHang,
+
+                tongTien:
+                  roundMoney(
+                    tongTien
+                  ),
+
+                tongChietKhau:
+                  roundMoney(
+                    tongChietKhau
+                  ),
+
+                thanhTien,
+
+                daThanhToan: 0,
+
+                conLai:
+                  thanhTien,
+
+                thue,
+
+                chiPhiKhac,
+
+                ghiChuNoiBo,
+
+                ghiChuChoKhachHang,
+
+                chinhSachThanhToan,
+              },
+            ],
+            { session }
+          );
+
+        res.json({
+          success: true,
+          data: hoaDon[0],
+        });
       }
     );
-
-    res.json({
-      success: true,
-      data: hoaDon,
-    });
   } catch (err) {
     res.status(500).json({
       success: false,
       message: err.message,
     });
+  } finally {
+    session.endSession();
   }
 };
-
 // ================= ADMIN - LẤY TẤT CẢ HÓA ĐƠN =================
 exports.getAllHoaDonAdmin = async (req, res) => {
   try {
@@ -727,14 +845,24 @@ exports.updateHoaDon = async (req, res) => {
       hoaDon.tongChietKhau =
         moiTongChietKhau;
 
-      hoaDon.thanhTien =
-        moiTongTien -
-        moiTongChietKhau +
-        Number(
-          hoaDon.chiPhiKhac || 0
-        );
+      // hoaDon.thanhTien =
+      //   moiTongTien -
+      //   moiTongChietKhau +
+      //   Number(
+      //     hoaDon.chiPhiKhac || 0
+      //   );
 
-      hoaDon.thanhTien += hoaDon.thanhTien * (hoaDon.thue / 100)
+      // hoaDon.thanhTien += hoaDon.thanhTien * (hoaDon.thue / 100)
+
+      hoaDon.thanhTien =
+  calculateThanhTien({
+    tongTien: moiTongTien,
+    tongChietKhau:
+      moiTongChietKhau,
+    thue: hoaDon.thue,
+    chiPhiKhac:
+      hoaDon.chiPhiKhac,
+  });
 
       hoaDon.conLai =
         hoaDon.thanhTien -
@@ -809,12 +937,15 @@ exports.thanhToanHoaDon = async (
     hoaDon.daThanhToan +=
       Number(soTienThanhToan);
 
-    hoaDon.conLai =
-      hoaDon.thanhTien -
-      hoaDon.daThanhToan;
+   hoaDon.conLai = Math.max(
+  0,
+  roundMoney(
+    hoaDon.thanhTien -
+      hoaDon.daThanhToan
+  )
+);
 
-    // ✅ Update trạng thái
-    if (hoaDon.conLai === 0) {
+if (hoaDon.conLai <= 0){
       hoaDon.trangThai =
         "Đã thanh toán";
     } else {
@@ -843,47 +974,41 @@ exports.deleteHoaDon = async (
   req,
   res
 ) => {
+  const session =
+    await mongoose.startSession();
+
   try {
-    const { id } = req.params;
+    await session.withTransaction(
+      async () => {
+        const { id } = req.params;
 
-    const hoaDon =
-      await HoaDon.findById(id);
+        const hoaDon =
+          await HoaDon.findById(
+            id
+          ).session(session);
 
-    if (!hoaDon) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Không tìm thấy hóa đơn",
-      });
-    }
+        if (!hoaDon) {
+          throw new Error(
+            "Không tìm thấy hóa đơn"
+          );
+        }
 
-    const trangThai =
-      hoaDon.trangThai;
+        if (
+          hoaDon.trangThai ===
+          "Thanh toán một phần"
+        ) {
+          throw new Error(
+            "Không thể xóa hóa đơn đã thanh toán một phần"
+          );
+        }
 
-    // ❌ Không cho xóa nếu thanh toán một phần
-    if (
-      trangThai ===
-      "Thanh toán một phần"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Không thể xóa hóa đơn đã thanh toán một phần",
-      });
-    }
+        // rollback đơn hàng
+        const donHangIds =
+          hoaDon.danhSachDonHang.map(
+            (item) =>
+              item.donHang
+          );
 
-    // 🔥 Rollback nếu chưa thanh toán
-    if (
-      trangThai ===
-      "Chưa thanh toán"
-    ) {
-      const donHangIds =
-        hoaDon.danhSachDonHang.map(
-          (item) =>
-            item.donHang.toString()
-        );
-
-      if (donHangIds.length > 0) {
         await DonHang.updateMany(
           {
             _id: {
@@ -894,24 +1019,29 @@ exports.deleteHoaDon = async (
             $set: {
               daXuatHoaDon: false,
             },
-          }
+          },
+          { session }
         );
+
+        await HoaDon.findByIdAndDelete(
+          id,
+          { session }
+        );
+
+        res.json({
+          success: true,
+          message:
+            "Xóa hóa đơn thành công",
+        });
       }
-    }
-
-    // ✅ Xóa hóa đơn
-    await HoaDon.findByIdAndDelete(id);
-
-    res.json({
-      success: true,
-      message:
-        "Xóa hóa đơn thành công",
-    });
+    );
   } catch (err) {
     res.status(500).json({
       success: false,
       message: err.message,
     });
+  } finally {
+    session.endSession();
   }
 };
 
@@ -1054,4 +1184,3 @@ exports.thongKeCongNoHoaDon = async (req, res) => {
     });
   }
 };
-

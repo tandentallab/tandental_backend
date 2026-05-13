@@ -111,26 +111,44 @@ const hoaDonSchema = new mongoose.Schema(
 
 /* ================= TỰ ĐỘNG TẠO SỐ HÓA ĐƠN ================= */
 
+/* ================= TỰ ĐỘNG TẠO SỐ HÓA ĐƠN ================= */
+
+const Counter = require("./Counter");
+
 hoaDonSchema.pre("save", async function () {
-  // chỉ tạo khi thêm mới
   if (!this.isNew || this.soHoaDon) {
     return;
   }
 
   const now = new Date();
 
+<<<<<<< HEAD
   // TAN + yy + mm
   const yy = now.getFullYear().toString().slice(-2);
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const prefix = `TAN${yy}${mm}`;
+=======
+  const yy = now
+    .getFullYear()
+    .toString()
+    .slice(-2);
 
-  // tìm số hóa đơn lớn nhất tháng hiện tại
-  const lastHoaDon = await mongoose
-    .model("HoaDon")
-    .findOne({
-      soHoaDon: {
-        $regex: `^${prefix}`,
+  const mm = String(
+    now.getMonth() + 1
+  ).padStart(2, "0");
+
+  const prefix = `${yy}${mm}`;
+>>>>>>> origin/hoangquan
+
+  const counterId = `HD${prefix}`;
+
+  const counter =
+    await Counter.findByIdAndUpdate(
+      counterId,
+      {
+        $inc: { seq: 1 },
       },
+<<<<<<< HEAD
     })
     .sort({ soHoaDon: -1 });
 
@@ -150,6 +168,40 @@ hoaDonSchema.pre("save", async function () {
   const abcd = String(nextNumber).padStart(4, "0");
 
   this.soHoaDon = `${prefix}${abcd}`;
+=======
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+
+  const abcd = String(counter.seq).padStart(
+    4,
+    "0"
+  );
+
+  this.soHoaDon = `${counterId}${abcd}`;
+});
+
+/* ================= INDEX ================= */
+
+hoaDonSchema.index(
+  { soHoaDon: 1 },
+  { unique: true }
+);
+
+hoaDonSchema.index({
+  nhaKhoa: 1,
+  createdAt: -1,
+});
+
+hoaDonSchema.index({
+  trangThai: 1,
+});
+
+hoaDonSchema.index({
+  ngayXuatHoaDon: -1,
+>>>>>>> origin/hoangquan
 });
 
 module.exports = mongoose.model(
