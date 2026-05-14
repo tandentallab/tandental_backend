@@ -35,11 +35,11 @@ exports.getDonHangChuaXuatHoaDon = async (req, res) => {
   try {
     const { nhaKhoaId } = req.params;
 
-const donHangs = await DonHang.find({
+    const donHangs = await DonHang.find({
       nhaKhoa: nhaKhoaId,
-      daXuatHoaDon: { $ne: true },        // Của Quân: An toàn hơn false
-      trangThai: "Hoàn thành",            // Của Bạn: Chỉ tính tiền đơn đã làm xong
-      "danhSachSanPham.loaiDon": "Mới",   // Của Quân: Không tính tiền đơn Bảo hành/Làm lại
+      daXuatHoaDon: { $ne: true },
+      //Chỉ lấy đơn hàng có loại đơn là mới
+      "danhSachSanPham.loaiDon": "Mới",
     })
       .populate("bacSi", "hoVaTen")
       .sort({ createdAt: -1 });
@@ -292,7 +292,7 @@ exports.createHoaDon = async (
           ghiChuChoKhachHang = "",
 
           chinhSachThanhToan =
-          "Thanh toán cuối tháng",
+            "Thanh toán cuối tháng",
         } = req.body;
 
         // ===== VALIDATE =====
@@ -545,6 +545,32 @@ exports.getAllHoaDonAdmin = async (req, res) => {
         },
       });
 
+      // ================= SEARCH THEO MÃ TANxxxx =================
+      searchConditions.push({
+        $expr: {
+          $regexMatch: {
+            input: {
+              $concat: [
+                "TAN",
+                {
+                  $toUpper: {
+                    $substrCP: [
+                      { $toString: "$_id" },
+                      16,
+                      8,
+                    ],
+                  },
+                },
+              ],
+            },
+
+            regex: keyword.toUpperCase(),
+
+            options: "i",
+          },
+        },
+      });
+
       query.$or = searchConditions;
     }
 
@@ -616,10 +642,11 @@ exports.getAllHoaDon = async (req, res) => {
     if (search) {
       query.$or = [
         {
-          soHoaDon: {
-            $regex: search,
-            $options: "i",
-          },
+          _id: search.match(
+            /^[0-9a-fA-F]{24}$/
+          )
+            ? search
+            : null,
         },
       ];
     }
@@ -855,14 +882,14 @@ exports.updateHoaDon = async (req, res) => {
       // hoaDon.thanhTien += hoaDon.thanhTien * (hoaDon.thue / 100)
 
       hoaDon.thanhTien =
-        calculateThanhTien({
-          tongTien: moiTongTien,
-          tongChietKhau:
-            moiTongChietKhau,
-          thue: hoaDon.thue,
-          chiPhiKhac:
-            hoaDon.chiPhiKhac,
-        });
+  calculateThanhTien({
+    tongTien: moiTongTien,
+    tongChietKhau:
+      moiTongChietKhau,
+    thue: hoaDon.thue,
+    chiPhiKhac:
+      hoaDon.chiPhiKhac,
+  });
 
       hoaDon.conLai =
         hoaDon.thanhTien -
@@ -937,15 +964,15 @@ exports.thanhToanHoaDon = async (
     hoaDon.daThanhToan +=
       Number(soTienThanhToan);
 
-    hoaDon.conLai = Math.max(
-      0,
-      roundMoney(
-        hoaDon.thanhTien -
-        hoaDon.daThanhToan
-      )
-    );
+   hoaDon.conLai = Math.max(
+  0,
+  roundMoney(
+    hoaDon.thanhTien -
+      hoaDon.daThanhToan
+  )
+);
 
-    if (hoaDon.conLai <= 0) {
+if (hoaDon.conLai <= 0){
       hoaDon.trangThai =
         "Đã thanh toán";
     } else {

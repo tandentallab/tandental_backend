@@ -109,7 +109,6 @@ const hoaDonSchema = new mongoose.Schema(
   }
 );
 
-/* ================= TỰ ĐỘNG TẠO SỐ HÓA ĐƠN ================= */
 
 /* ================= TỰ ĐỘNG TẠO SỐ HÓA ĐƠN ================= */
 
@@ -127,7 +126,7 @@ hoaDonSchema.pre("save", async function () {
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const prefix = `TAN${yy}${mm}`;
 
-  const counterId = `HD${prefix}`;
+  const counterId = `${prefix}`;
 
   const counter =
     await Counter.findByIdAndUpdate(
