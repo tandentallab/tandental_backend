@@ -31,7 +31,7 @@ const app = express();
 
 const allowedOrigins = [
   "http://localhost:3000",
-  "http://localhost:3001",
+  "http://127.0.0.1:3000",
   process.env.ADMIN_FRONTEND_URL,
   process.env.PUBLIC_FRONTEND_URL,
 ].filter(Boolean);
@@ -39,7 +39,8 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      
+      if (!origin || allowedOrigins.includes(origin) || origin.startsWith("http://192.168.") || origin.startsWith("http://172.")) {
         return callback(null, true);
       }
       return callback(new Error("Not allowed by CORS"));
@@ -87,12 +88,13 @@ const startServer = async () => {
     app.use("/api/nhan-vien", nhanVienRoutes);
     app.use("/api/bang-luong", bangLuongRoutes);
     
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on port ${PORT}`);
     });
   } catch (error) {
     console.error(error);
   }
 };
+
 
 startServer();

@@ -8,14 +8,16 @@ const {
     deleteSanPham,
 } = require("../controllers/sanPhamController");
 
-const { verifyToken } = require("../middleware/authMiddleware");
+const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
+
+const allowAdminAndNhanVien = authorizeRoles(APP_ROLES.ADMIN, APP_ROLES.NHAN_VIEN);
 
 // Thêm và Lấy danh sách
-router.post("/", verifyToken, createSanPham);
-router.get("/", verifyToken, getAllSanPham);
+router.post("/", verifyToken, allowAdminAndNhanVien, createSanPham);
+router.get("/", verifyToken, allowAdminAndNhanVien, getAllSanPham);
 
 // Sửa và Xóa cần truyền thêm ID trên URL (ví dụ: /api/sanpham/64a1b2c3...)
-router.put("/:id", verifyToken, updateSanPham);
-router.delete("/:id", verifyToken, deleteSanPham);
+router.put("/:id", verifyToken, allowAdminAndNhanVien, updateSanPham);
+router.delete("/:id", verifyToken, allowAdminAndNhanVien, deleteSanPham);
 
 module.exports = router;

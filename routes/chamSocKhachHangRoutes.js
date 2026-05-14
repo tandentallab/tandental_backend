@@ -9,21 +9,23 @@ const {
   getChamSocHomNay,
 } = require("../controllers/chamSocKhachHangController");
 
-const { verifyToken } = require("../middleware/authMiddleware");
+const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
+
+const allowAdminOnly = authorizeRoles(APP_ROLES.ADMIN);
 
 // ➕ Tạo
-router.post("/", verifyToken, createChamSoc);
+router.post("/", verifyToken, allowAdminOnly, createChamSoc);
 
 // 📄 Lấy theo nha khoa
-router.get("/nha-khoa/:nhaKhoaId", verifyToken, getChamSocByNhaKhoa);
+router.get("/nha-khoa/:nhaKhoaId", verifyToken, allowAdminOnly, getChamSocByNhaKhoa);
 
 // 🔔 Lịch hôm nay
-router.get("/hom-nay", verifyToken, getChamSocHomNay);
+router.get("/hom-nay", verifyToken, allowAdminOnly, getChamSocHomNay);
 
 // ✏️ Update
-router.put("/:id", verifyToken, updateChamSoc);
+router.put("/:id", verifyToken, allowAdminOnly, updateChamSoc);
 
 // ❌ Delete
-router.delete("/:id", verifyToken, deleteChamSoc);
+router.delete("/:id", verifyToken, allowAdminOnly, deleteChamSoc);
 
 module.exports = router;
