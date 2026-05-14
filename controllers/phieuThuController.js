@@ -133,6 +133,11 @@ exports.createPhieuThu = async (req, res) => {
       const hd = await HoaDon.findById(item.hoaDon);
       if (!hd) continue;
 
+      // Snapshot trước khi thay đổi
+      const giaTriHoaDon = hd.thanhTien || 0;
+      const daTTruocLanNay = hd.daThanhToan || 0;
+      const conLaiTruocLanNay = hd.conLai || 0;
+
       let soTien = Number(item.soTienThanhToan) || 0;
       let conThua = 0;
       if (soTien > hd.conLai) {
@@ -155,7 +160,13 @@ exports.createPhieuThu = async (req, res) => {
       tongTienThu += soTien;
       tongConThua += conThua;
       tongDuocKhauTru += soTien;
-      danhSachLuu.push({ hoaDon: item.hoaDon, soTienThanhToan: soTien });
+      danhSachLuu.push({
+        hoaDon: item.hoaDon,
+        soTienThanhToan: soTien,
+        giaTriHoaDon,
+        daTTruocLanNay,
+        conLaiTruocLanNay,
+      });
     }
 
     // Generate soPhieuThu

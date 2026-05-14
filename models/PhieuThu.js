@@ -13,6 +13,10 @@ const phieuThuSchema = new mongoose.Schema(
       {
         hoaDon: { type: mongoose.Schema.Types.ObjectId, ref: "HoaDon" },
         soTienThanhToan: { type: Number, default: 0 },
+        // Snapshot tại thời điểm lập phiếu thu
+        giaTriHoaDon: { type: Number, default: 0 },       // thanhTien lúc tạo
+        daTTruocLanNay: { type: Number, default: 0 },     // daThanhToan TRƯỚC lần này
+        conLaiTruocLanNay: { type: Number, default: 0 },  // conLai TRƯỚC lần này
       },
     ],
 
