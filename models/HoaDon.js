@@ -109,7 +109,6 @@ const hoaDonSchema = new mongoose.Schema(
   }
 );
 
-/* ================= TỰ ĐỘNG TẠO SỐ HÓA ĐƠN ================= */
 
 /* ================= TỰ ĐỘNG TẠO SỐ HÓA ĐƠN ================= */
 
