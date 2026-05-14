@@ -50,23 +50,6 @@ exports.getDonHangChuaXuatHoaDon = async (req, res) => {
   }
 };
 
-// ================= LẤY DANH SÁCH ĐƠN HÀNG CHƯA XUẤT HÓA ĐƠN - TẤT CẢ NHA KHOA =================
-exports.getDonHangChuaXuatHoaDonAll = async (req, res) => {
-  try {
-    const donHangs = await DonHang.find({
-      daXuatHoaDon: false,
-      trangThai: "Hoàn thành",
-    })
-      .populate("nhaKhoa", "hoVaTen tenGiaoDich")
-      .populate("bacSi", "hoVaTen")
-      .sort({ createdAt: -1 });
-
-    res.json(donHangs);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
-
 // ================= ĐẾM SỐ ĐƠN HÀNG CHƯA XUẤT HÓA ĐƠN CỦA TẤT CẢ NHA KHOA =================
 exports.countDonHangChuaXuatHoaDonAll = async (
   req,
@@ -776,6 +759,32 @@ exports.updateHoaDon = async (req, res) => {
       hoaDon.chiPhiKhac =
         Number(chiPhiKhac);
     }
+
+    // ================= RECALCULATE =================
+hoaDon.thanhTien = calculateThanhTien({
+  tongTien: hoaDon.tongTien,
+  tongChietKhau: hoaDon.tongChietKhau,
+  thue: hoaDon.thue,
+  chiPhiKhac: hoaDon.chiPhiKhac,
+});
+
+hoaDon.conLai = Math.max(
+  0,
+  roundMoney(
+    hoaDon.thanhTien - hoaDon.daThanhToan
+  )
+);
+
+// auto trạng thái
+if (hoaDon.conLai <= 0) {
+  hoaDon.trangThai = "Đã thanh toán";
+} else if (hoaDon.daThanhToan > 0) {
+  hoaDon.trangThai =
+    "Thanh toán một phần";
+} else {
+  hoaDon.trangThai =
+    "Chưa thanh toán";
+}
 
     if (ghiChuNoiBo !== undefined) {
       hoaDon.ghiChuNoiBo =
