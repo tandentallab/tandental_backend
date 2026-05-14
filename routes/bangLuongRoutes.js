@@ -1,6 +1,7 @@
 const express = require("express");
 
 const router = express.Router();
+const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
 
 const {
   createBangLuong,
@@ -10,17 +11,21 @@ const {
   deleteBangLuongByMonthYear
 } = require("../controllers/bangLuongController");
 
-router.post("/", createBangLuong);
+const allowAdminAndKeToan = authorizeRoles(APP_ROLES.ADMIN, APP_ROLES.KE_TOAN);
 
-router.get("/", getAllBangLuong);
+router.post("/", verifyToken, allowAdminAndKeToan, createBangLuong);
 
-router.get("/:id", getBangLuongById);
+router.get("/", verifyToken, allowAdminAndKeToan, getAllBangLuong);
+
+router.get("/:id", verifyToken, allowAdminAndKeToan, getBangLuongById);
 
 router.delete(
   "/",
+  verifyToken,
+  allowAdminAndKeToan,
   deleteBangLuongByMonthYear
 );
 
-router.delete("/:id", deleteBangLuong);
+router.delete("/:id", verifyToken, allowAdminAndKeToan, deleteBangLuong);
 
 module.exports = router;

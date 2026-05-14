@@ -1,11 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../controllers/nhaCungCapController");
+const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
 
-router.get("/", controller.getAllNhaCungCap);
-router.get("/:id", controller.getNhaCungCapById);
-router.post("/", controller.createNhaCungCap);
-router.put("/:id", controller.updateNhaCungCap);
-router.delete("/:id", controller.softDeleteNhaCungCap);
+const allowAdminOnly = authorizeRoles(APP_ROLES.ADMIN);
+
+router.get("/", verifyToken, allowAdminOnly, controller.getAllNhaCungCap);
+router.get("/:id", verifyToken, allowAdminOnly, controller.getNhaCungCapById);
+router.post("/", verifyToken, allowAdminOnly, controller.createNhaCungCap);
+router.put("/:id", verifyToken, allowAdminOnly, controller.updateNhaCungCap);
+router.delete("/:id", verifyToken, allowAdminOnly, controller.softDeleteNhaCungCap);
 
 module.exports = router;

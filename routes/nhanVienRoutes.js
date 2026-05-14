@@ -1,6 +1,7 @@
 const express = require("express");
 
 const router = express.Router();
+const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
 
 const {
   createNhanVien,
@@ -10,14 +11,16 @@ const {
   deleteNhanVien,
 } = require("../controllers/nhanVienController");
 
-router.post("/", createNhanVien);
+const allowAdminAndKeToan = authorizeRoles(APP_ROLES.ADMIN, APP_ROLES.KE_TOAN);
 
-router.get("/", getAllNhanVien);
+router.post("/", verifyToken, allowAdminAndKeToan, createNhanVien);
 
-router.get("/:id", getNhanVienById);
+router.get("/", verifyToken, allowAdminAndKeToan, getAllNhanVien);
 
-router.put("/:id", updateNhanVien);
+router.get("/:id", verifyToken, allowAdminAndKeToan, getNhanVienById);
 
-router.delete("/:id", deleteNhanVien);
+router.put("/:id", verifyToken, allowAdminAndKeToan, updateNhanVien);
+
+router.delete("/:id", verifyToken, allowAdminAndKeToan, deleteNhanVien);
 
 module.exports = router;

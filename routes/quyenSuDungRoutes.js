@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { verifyToken } = require("../middleware/authMiddleware");
+const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
 
 const {
   getAllQuyenSuDungIncludeInactive,
@@ -12,15 +12,15 @@ const {
   restoreQuyenSuDung,
 } = require("../controllers/quyenSuDungController");
 
-// 🔓 Public - Lấy danh sách (chỉ active - để select dropdown)
-router.get("/", getAllQuyenSuDung);
-router.get("/all", getAllQuyenSuDungIncludeInactive); // Lấy tất cả (bao gồm inactive)
-router.get("/:id", getQuyenSuDungById);
+// 🔒 Admin - Quản lý quyền sử dụng
+router.get("/", verifyToken, authorizeRoles(APP_ROLES.ADMIN), getAllQuyenSuDung);
+router.get("/all", verifyToken, authorizeRoles(APP_ROLES.ADMIN), getAllQuyenSuDungIncludeInactive); // Lấy tất cả (bao gồm inactive)
+router.get("/:id", verifyToken, authorizeRoles(APP_ROLES.ADMIN), getQuyenSuDungById);
 
 // 🔒 Private - CRUD
-router.post("/", verifyToken, createQuyenSuDung);
-router.put("/:id", verifyToken, updateQuyenSuDung);
-router.delete("/:id", verifyToken, deleteQuyenSuDung);
-router.put("/:id/restore", verifyToken, restoreQuyenSuDung); // Restore
+router.post("/", verifyToken, authorizeRoles(APP_ROLES.ADMIN), createQuyenSuDung);
+router.put("/:id", verifyToken, authorizeRoles(APP_ROLES.ADMIN), updateQuyenSuDung);
+router.delete("/:id", verifyToken, authorizeRoles(APP_ROLES.ADMIN), deleteQuyenSuDung);
+router.put("/:id/restore", verifyToken, authorizeRoles(APP_ROLES.ADMIN), restoreQuyenSuDung); // Restore
 
 module.exports = router;
