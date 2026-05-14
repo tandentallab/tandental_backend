@@ -166,7 +166,7 @@ exports.getDoanhThuThang = async (req, res) => {
             .endOf("month")
             .toDate();
 
-        // ── 1. HoaDon: trước tháng + trong tháng ────────────────────────────
+        // ── 1. HoaDon: Tính Phát sinh trong tháng & Nợ cũ trước tháng ──────────
         const [hdFacet] = await HoaDon.aggregate([
             {
                 $facet: {
@@ -182,32 +182,36 @@ exports.getDoanhThuThang = async (req, res) => {
             },
         ]);
 
-        // ── 2. PhieuThu: join HoaDon → lấy nhaKhoa ──────────────────────────
+        // ── 2. PhieuThu: ĐÃ FIX LỖI MẢNG DANH SÁCH HÓA ĐƠN ───────────────────
         const [ptFacet] = await PhieuThu.aggregate([
+            // B1: Tách mảng danhSachHoaDon ra thành từng dòng riêng biệt
+            { $unwind: "$danhSachHoaDon" },
+            // B2: Lookup lấy thông tin Hóa đơn tương ứng với từng dòng
             {
                 $lookup: {
                     from: "hoadons",
-                    localField: "hoaDon",
+                    localField: "danhSachHoaDon.hoaDon", // Gọi đúng đường dẫn
                     foreignField: "_id",
                     as: "hd",
                 },
             },
             { $unwind: "$hd" },
+            // B3: Tính tổng tiền thanh toán dựa trên "soTienThanhToan" của từng hóa đơn
             {
                 $facet: {
                     trongThang: [
                         { $match: { ngayThu: { $gte: startOfMonth, $lte: endOfMonth } } },
-                        { $group: { _id: "$hd.nhaKhoa", thanhToan: { $sum: "$duocKhauTru" } } },
+                        { $group: { _id: "$hd.nhaKhoa", thanhToan: { $sum: "$danhSachHoaDon.soTienThanhToan" } } },
                     ],
                     truocThang: [
                         { $match: { ngayThu: { $lt: startOfMonth } } },
-                        { $group: { _id: "$hd.nhaKhoa", tong: { $sum: "$duocKhauTru" } } },
+                        { $group: { _id: "$hd.nhaKhoa", tong: { $sum: "$danhSachHoaDon.soTienThanhToan" } } },
                     ],
                 },
             },
         ]);
 
-        // ── 3. Map để tra O(1) ───────────────────────────────────────────────
+        // ── 3. Map để tra cứu nhanh O(1) ─────────────────────────────────────
         const toMap = (arr) =>
             arr.reduce((m, x) => { m[x._id?.toString()] = x; return m; }, {});
 
@@ -216,7 +220,7 @@ exports.getDoanhThuThang = async (req, res) => {
         const ptTrong = toMap(ptFacet.trongThang);
         const ptTruoc = toMap(ptFacet.truocThang);
 
-        // ── 4. Gộp tất cả NhaKhoa có dữ liệu ────────────────────────────────
+        // ── 4. Gộp tất cả NhaKhoa có dữ liệu (có nợ, có phát sinh hoặc có trả tiền)
         const allIds = new Set([
             ...hdFacet.trongThang, ...hdFacet.truocThang,
             ...ptFacet.trongThang, ...ptFacet.truocThang,
@@ -229,15 +233,21 @@ exports.getDoanhThuThang = async (req, res) => {
 
         const nkMap = nhaKhoaList.reduce((m, x) => { m[x._id.toString()] = x; return m; }, {});
 
-        // ── 5. Tính từng dòng ────────────────────────────────────────────────
+        // ── 5. Tính toán Nợ đầu kỳ, Phát Sinh, Thanh Toán, Cuối Kỳ ──────────
         let tongNoDauKy = 0, tongPhatSinh = 0, tongThanhToan = 0, tongConNo = 0;
 
         const chiTiet = [...allIds]
             .map((id) => {
                 const tenNhaKhoa = nkMap[id]?.tenGiaoDich || nkMap[id]?.hoVaTen || "—";
+
+                // Nợ đầu kỳ = Tổng nợ cũ - Tổng đã trả cũ
                 const noDauKy = (hdTruoc[id]?.tong || 0) - (ptTruoc[id]?.tong || 0);
+
+                // Trong kỳ
                 const phatSinh = hdTrong[id]?.phatSinh || 0;
                 const thanhToan = ptTrong[id]?.thanhToan || 0;
+
+                // Nợ cuối kỳ
                 const conNo = noDauKy + phatSinh - thanhToan;
 
                 tongNoDauKy += noDauKy;
@@ -247,7 +257,9 @@ exports.getDoanhThuThang = async (req, res) => {
 
                 return { nhaKhoaId: id, tenNhaKhoa, noDauKy, phatSinh, thanhToan, conNo };
             })
+            // Chỉ hiển thị nha khoa nào có biến động tiền bạc
             .filter(r => r.noDauKy || r.phatSinh || r.thanhToan || r.conNo)
+            // Sắp xếp theo tên A-Z
             .sort((a, b) => a.tenNhaKhoa.localeCompare(b.tenNhaKhoa, "vi"))
             .map((r, i) => ({ ...r, stt: i + 1 }));
 
