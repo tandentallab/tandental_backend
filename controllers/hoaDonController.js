@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const HoaDon = require("../models/HoaDon");
 const DonHang = require("../models/DonHang");
-const BangGia = require("../models/bangGia");
+const BangGia = require("../models/BangGia");
 const SanPham = require("../models/SanPham");
 
 const roundMoney = (n) =>
@@ -41,23 +41,6 @@ exports.getDonHangChuaXuatHoaDon = async (req, res) => {
       //Chỉ lấy đơn hàng có loại đơn là mới
       "danhSachSanPham.loaiDon": "Mới",
     })
-      .populate("bacSi", "hoVaTen")
-      .sort({ createdAt: -1 });
-
-    res.json(donHangs);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
-
-// ================= LẤY DANH SÁCH ĐƠN HÀNG CHƯA XUẤT HÓA ĐƠN - TẤT CẢ NHA KHOA =================
-exports.getDonHangChuaXuatHoaDonAll = async (req, res) => {
-  try {
-    const donHangs = await DonHang.find({
-      daXuatHoaDon: false,
-      trangThai: "Hoàn thành",
-    })
-      .populate("nhaKhoa", "hoVaTen tenGiaoDich")
       .populate("bacSi", "hoVaTen")
       .sort({ createdAt: -1 });
 

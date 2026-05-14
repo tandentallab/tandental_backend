@@ -37,18 +37,13 @@ router.get(
   hoaDonController.countDonHangChuaXuatHoaDonAll
 );
 
-// Lấy đơn hàng chưa xuất hóa đơn - tất cả nha khoa (PHẢI ĐẶT TRƯỚC :nhaKhoaId)
-router.get(
-  "/don-hang-chua-xuat/all",
-  verifyToken,
-  allowAdminAndKeToan,
-  hoaDonController.getDonHangChuaXuatHoaDonAll
-);
 
 // Lấy danh sách hóa đơn theo nha khoa
 router.get("/nha-khoa/:nhaKhoaId", verifyToken, allowAdminAndKeToan, hoaDonController.getAllHoaDon);
 
-// Lấy đơn hàng chưa xuất hóa đơn - nha khoa cụ thể
+router.get("/:id", hoaDonController.getHoaDonById);
+
+// Lấy đơn hàng chưa xuất hóa đơn
 router.get(
   "/don-hang-chua-xuat/:nhaKhoaId",
   verifyToken,

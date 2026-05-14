@@ -1,4 +1,4 @@
-const CongDoan = require("../models/congDoan");
+const CongDoan = require("../models/CongDoan");
 
 // Thêm công đoạn mới vào kho
 exports.createCongDoan = async (req, res) => {

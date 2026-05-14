@@ -35,4 +35,5 @@ bangGiaSchema.index(
   { unique: true }
 );
 
-module.exports = mongoose.model("BangGia", bangGiaSchema);
+module.exports =
+  mongoose.models.BangGia || mongoose.model("BangGia", bangGiaSchema);
