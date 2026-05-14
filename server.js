@@ -32,6 +32,7 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
+  "https://tan-dental-frontend-snmb.vercel.app",
   process.env.ADMIN_FRONTEND_URL,
   process.env.PUBLIC_FRONTEND_URL,
 ].filter(Boolean);
@@ -86,7 +87,7 @@ const startServer = async () => {
     app.use("/api/baocao", baoCaoRoutes);
     app.use("/api/nhan-vien", nhanVienRoutes);
     app.use("/api/bang-luong", bangLuongRoutes);
-    
+
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
