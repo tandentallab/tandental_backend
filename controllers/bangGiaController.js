@@ -1,4 +1,4 @@
-const BangGia = require("../models/bangGia");
+const BangGia = require("../models/BangGia");
 const SanPham = require("../models/SanPham");
 
 /* ================= GET ALL BẢNG GIÁ ================= */

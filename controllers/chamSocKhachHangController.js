@@ -1,4 +1,4 @@
-const ChamSocKhachHang = require("../models/chamSocKhachHang");
+const ChamSocKhachHang = require("../models/ChamSocKhachHang");
 
 // ➕ Tạo chăm sóc
 exports.createChamSoc = async (req, res) => {
