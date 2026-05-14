@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const HoaDon = require("../models/HoaDon");
 const DonHang = require("../models/DonHang");
-const BangGia = require("../models/BangGia");
+const BangGia = require("../models/bangGia");
 const SanPham = require("../models/SanPham");
 
 const roundMoney = (n) =>
@@ -50,22 +50,6 @@ exports.getDonHangChuaXuatHoaDon = async (req, res) => {
   }
 };
 
-// ================= LẤY DANH SÁCH ĐƠN HÀNG CHƯA XUẤT HÓA ĐƠN - TẤT CẢ NHA KHOA =================
-exports.getDonHangChuaXuatHoaDonAll = async (req, res) => {
-  try {
-    const donHangs = await DonHang.find({
-      daXuatHoaDon: { $ne: true },
-    })
-      .populate("nhaKhoa", "hoVaTen tenGiaoDich")
-      .populate("bacSi", "hoVaTen")
-      .sort({ createdAt: -1 });
-
-    res.json(donHangs);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
-
 // ================= ĐẾM SỐ ĐƠN HÀNG CHƯA XUẤT HÓA ĐƠN CỦA TẤT CẢ NHA KHOA =================
 exports.countDonHangChuaXuatHoaDonAll = async (
   req,
@@ -93,9 +77,9 @@ exports.countDonHangChuaXuatHoaDonAll = async (
             _id: "$nhaKhoa",
 
             soDonHangChuaXuatHoaDon:
-            {
-              $sum: 1,
-            },
+              {
+                $sum: 1,
+              },
 
             // 🔥 ngày nhận đơn hàng gần nhất chưa xuất
             ngayDonHangGanNhat: {
@@ -291,7 +275,7 @@ exports.createHoaDon = async (
           ghiChuChoKhachHang = "",
 
           chinhSachThanhToan =
-          "Thanh toán cuối tháng",
+            "Thanh toán cuối tháng",
         } = req.body;
 
         // ===== VALIDATE =====
@@ -881,14 +865,14 @@ exports.updateHoaDon = async (req, res) => {
       // hoaDon.thanhTien += hoaDon.thanhTien * (hoaDon.thue / 100)
 
       hoaDon.thanhTien =
-        calculateThanhTien({
-          tongTien: moiTongTien,
-          tongChietKhau:
-            moiTongChietKhau,
-          thue: hoaDon.thue,
-          chiPhiKhac:
-            hoaDon.chiPhiKhac,
-        });
+  calculateThanhTien({
+    tongTien: moiTongTien,
+    tongChietKhau:
+      moiTongChietKhau,
+    thue: hoaDon.thue,
+    chiPhiKhac:
+      hoaDon.chiPhiKhac,
+  });
 
       hoaDon.conLai =
         hoaDon.thanhTien -
@@ -963,15 +947,15 @@ exports.thanhToanHoaDon = async (
     hoaDon.daThanhToan +=
       Number(soTienThanhToan);
 
-    hoaDon.conLai = Math.max(
-      0,
-      roundMoney(
-        hoaDon.thanhTien -
-        hoaDon.daThanhToan
-      )
-    );
+   hoaDon.conLai = Math.max(
+  0,
+  roundMoney(
+    hoaDon.thanhTien -
+      hoaDon.daThanhToan
+  )
+);
 
-    if (hoaDon.conLai <= 0) {
+if (hoaDon.conLai <= 0){
       hoaDon.trangThai =
         "Đã thanh toán";
     } else {
@@ -1080,7 +1064,7 @@ exports.getHoaDonChuaThanhToanByNhaKhoa = async (req, res) => {
       nhaKhoa: nhaKhoaId,
       trangThai: { $in: ["Chưa thanh toán", "Thanh toán một phần"] },
     })
-      .select("_id soHoaDon ngayXuatHoaDon thanhTien daThanhToan conLai trangThai")
+      .select("_id ngayXuatHoaDon thanhTien daThanhToan conLai trangThai")
       .sort({ ngayXuatHoaDon: -1 });
 
     res.json({ success: true, data: danhSach });
