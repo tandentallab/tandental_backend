@@ -22,11 +22,6 @@ const donHangSchema = new mongoose.Schema(
             unique: true,
             index: true,
             trim: true,
-        },
-
-        maDonHang: {
-            type: String,
-            unique: true,
             sparse: true,
         },
 
