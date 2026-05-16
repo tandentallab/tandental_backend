@@ -6,6 +6,7 @@ const {
   upsertBangGia,
   getBangGiaByNhaKhoa,
   deleteBangGia,
+  applyBangGiaTemplate
 } = require("../controllers/bangGiaController");
 
 const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
@@ -25,5 +26,12 @@ router.post("/", verifyToken, allowAdminOnly, upsertBangGia);
 
 // xóa (reset về giá chung)
 router.delete("/:id", verifyToken, allowAdminOnly, deleteBangGia);
+
+router.post(
+  "/apply-template",
+  verifyToken,
+  allowAdminOnly,
+  applyBangGiaTemplate
+);
 
 module.exports = router;

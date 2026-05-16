@@ -760,6 +760,32 @@ exports.updateHoaDon = async (req, res) => {
         Number(chiPhiKhac);
     }
 
+    // ================= RECALCULATE =================
+hoaDon.thanhTien = calculateThanhTien({
+  tongTien: hoaDon.tongTien,
+  tongChietKhau: hoaDon.tongChietKhau,
+  thue: hoaDon.thue,
+  chiPhiKhac: hoaDon.chiPhiKhac,
+});
+
+hoaDon.conLai = Math.max(
+  0,
+  roundMoney(
+    hoaDon.thanhTien - hoaDon.daThanhToan
+  )
+);
+
+// auto trạng thái
+if (hoaDon.conLai <= 0) {
+  hoaDon.trangThai = "Đã thanh toán";
+} else if (hoaDon.daThanhToan > 0) {
+  hoaDon.trangThai =
+    "Thanh toán một phần";
+} else {
+  hoaDon.trangThai =
+    "Chưa thanh toán";
+}
+
     if (ghiChuNoiBo !== undefined) {
       hoaDon.ghiChuNoiBo =
         ghiChuNoiBo;
