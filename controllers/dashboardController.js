@@ -61,15 +61,38 @@ exports.getChartStats = async (req, res) => {
         let resultData = [];
 
         if (chartType === "chart1") {
-            // ─────────────────────────────────────────────────────────────────
-            // CHART 1: HÀNG NHẬN THEO LOẠI SẢN PHẨM
-            // ─────────────────────────────────────────────────────────────────
+            // CHART 1: THỐNG KÊ SỐ LƯỢNG THEO LOẠI ĐƠN (Mới / Sửa / Làm lại / Bảo hành)
             resultData = await DonHang.aggregate([
                 { $match: matchQuery },
+                // 1. Tách mảng danhSachSanPham ra thành từng object riêng biệt
                 { $unwind: "$danhSachSanPham" },
                 {
                     $group: {
-                        _id: { sortKey, displayDate, loaiDon: "$danhSachSanPham.loaiDon" },
+                        _id: {
+                            sortKey,
+                            displayDate,
+                            // 2. Trỏ thẳng vào loaiDon của Đơn Hàng. Dùng $ifNull để đề phòng các đơn cũ bị rỗng
+                            // 2. Dùng $regexMatch để chống mọi lỗi font/khoảng trắng
+                            loaiDon: {
+                                $switch: {
+                                    branches: [
+                                        {
+                                            case: { $regexMatch: { input: { $ifNull: ["$danhSachSanPham.loaiDon", ""] }, regex: "sửa|sửa", options: "i" } },
+                                            then: "Hàng sửa"
+                                        },
+                                        {
+                                            case: { $regexMatch: { input: { $ifNull: ["$danhSachSanPham.loaiDon", ""] }, regex: "bảo hành|bảo hành", options: "i" } },
+                                            then: "Hàng bảo hành"
+                                        },
+                                        {
+                                            case: { $regexMatch: { input: { $ifNull: ["$danhSachSanPham.loaiDon", ""] }, regex: "làm lại|làm lại", options: "i" } },
+                                            then: "Hàng làm lại"
+                                        },
+                                    ],
+                                    default: "Mới"
+                                }
+                            }
+                        },
                         totalSoLuong: { $sum: "$danhSachSanPham.soLuong" },
                     },
                 },
@@ -88,7 +111,6 @@ exports.getChartStats = async (req, res) => {
                     },
                 },
             ]);
-
         } else if (chartType === "chart2") {
             // ─────────────────────────────────────────────────────────────────
             // CHART 2: TÌNH HÌNH NHẬN HÀNG (ĐƠN)
