@@ -199,7 +199,7 @@ exports.createPhieuThu = async (req, res) => {
 exports.updatePhieuThu = async (req, res) => {
   try {
     const { id } = req.params;
-    const { ngayThu, phuongThucThanhToan, noiDung } = req.body;
+    const { ngayThu, phuongThucThanhToan, noiDung, soTienThu } = req.body;
 
     const phieuThu = await PhieuThu.findById(id);
     if (!phieuThu) {
@@ -209,6 +209,42 @@ exports.updatePhieuThu = async (req, res) => {
     if (ngayThu !== undefined) phieuThu.ngayThu = ngayThu;
     if (phuongThucThanhToan !== undefined) phieuThu.phuongThucThanhToan = phuongThucThanhToan;
     if (noiDung !== undefined) phieuThu.noiDung = noiDung;
+
+    if (soTienThu !== undefined && Number(soTienThu) !== phieuThu.soTienThu) {
+      const newTotal = Number(soTienThu);
+      let remaining = newTotal;
+      let tongKhauTru = 0;
+
+      for (let i = 0; i < phieuThu.danhSachHoaDon.length; i++) {
+        const item = phieuThu.danhSachHoaDon[i];
+        const hd = await HoaDon.findById(item.hoaDon);
+        if (!hd) continue;
+
+        const maxForThisHD = item.conLaiTruocLanNay || 0;
+        const newPay = Math.min(remaining, maxForThisHD);
+        remaining = Math.max(0, remaining - newPay);
+        tongKhauTru += newPay;
+
+        hd.daThanhToan = (item.daTTruocLanNay || 0) + newPay;
+        hd.conLai = Math.max(0, (item.conLaiTruocLanNay || 0) - newPay);
+
+        if (hd.conLai <= 0) {
+          hd.trangThai = "Đã thanh toán";
+        } else if (hd.daThanhToan > 0) {
+          hd.trangThai = "Thanh toán một phần";
+        } else {
+          hd.trangThai = "Chưa thanh toán";
+        }
+        await hd.save();
+
+        phieuThu.danhSachHoaDon[i].soTienThanhToan = newPay;
+      }
+
+      phieuThu.soTienThu = newTotal;
+      phieuThu.duocKhauTru = tongKhauTru;
+      phieuThu.conThua = Math.max(0, newTotal - tongKhauTru);
+      phieuThu.markModified("danhSachHoaDon");
+    }
 
     await phieuThu.save();
     res.json({ success: true, data: phieuThu });

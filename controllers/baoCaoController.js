@@ -86,19 +86,23 @@ exports.getDetailedProductReport = async (req, res) => {
 
         const reportData = await DonHang.aggregate([
             { $match: { [matchField]: { $gte: start, $lte: end } } },
+
+            // 1. Tách mảng sản phẩm trong Đơn hàng
             { $unwind: "$danhSachSanPham" },
-            { $addFields: { productObjectId: { $toObjectId: "$danhSachSanPham.sanPham" } } },
+
+            // 2. Nối sang bảng SanPham CHỈ ĐỂ lấy Tên SP, Loại SP
             {
                 $lookup: {
                     from: "sanphams",
-                    localField: "productObjectId",
+                    localField: "danhSachSanPham.sanPham",
                     foreignField: "_id",
                     as: "productInfo",
                 },
             },
-            { $unwind: "$productInfo" },
+            { $unwind: { path: "$productInfo", preserveNullAndEmptyArrays: true } },
+
             {
-                // Tầng 1: Nhóm theo (loaiSanPham, nhomSanPham, tenSanPham)
+                // Gom theo (loaiSP, nhomSP, tenSP) — đếm từng loaiDon bằng $eq
                 $group: {
                     _id: {
                         loaiSP: "$productInfo.loaiSanPham",
@@ -106,9 +110,9 @@ exports.getDetailedProductReport = async (req, res) => {
                         tenSP: "$productInfo.tenSanPham",
                     },
                     moi: { $sum: { $cond: [{ $eq: ["$danhSachSanPham.loaiDon", "Mới"] }, "$danhSachSanPham.soLuong", 0] } },
-                    sua: { $sum: { $cond: [{ $eq: ["$danhSachSanPham.loaiDon", "Sửa"] }, "$danhSachSanPham.soLuong", 0] } },
-                    baoHanh: { $sum: { $cond: [{ $eq: ["$danhSachSanPham.loaiDon", "Bảo hành"] }, "$danhSachSanPham.soLuong", 0] } },
-                    lamLai: { $sum: { $cond: [{ $eq: ["$danhSachSanPham.loaiDon", "Làm lại"] }, "$danhSachSanPham.soLuong", 0] } },
+                    sua: { $sum: { $cond: [{ $eq: ["$danhSachSanPham.loaiDon", "Hàng sửa"] }, "$danhSachSanPham.soLuong", 0] } },
+                    baoHanh: { $sum: { $cond: [{ $eq: ["$danhSachSanPham.loaiDon", "Hàng bảo hành"] }, "$danhSachSanPham.soLuong", 0] } },
+                    lamLai: { $sum: { $cond: [{ $eq: ["$danhSachSanPham.loaiDon", "Hàng làm lại"] }, "$danhSachSanPham.soLuong", 0] } },
                     tong: { $sum: "$danhSachSanPham.soLuong" },
                 },
             },

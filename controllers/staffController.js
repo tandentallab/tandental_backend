@@ -18,10 +18,9 @@ const generateToken = (staff) => {
   );
 };
 
-// 👤 Lấy thông tin user hiện tại (từ token)
+// 👤 Lấy thông tin user hiện tại (Sửa lại key _id cho đồng nhất)
 exports.getCurrentStaff = async (req, res) => {
   try {
-    // req.user được set bởi middleware authMiddleware
     const staff = await Staff.findById(req.user.id)
       .select("-Password")
       .populate("quyenSuDung");
@@ -33,12 +32,13 @@ exports.getCurrentStaff = async (req, res) => {
     res.json({
       message: "Lấy thông tin user thành công",
       staff: {
-        id: staff._id,
+        _id: staff._id, // Đổi từ id -> _id
         MSNV: staff.MSNV,
         HoTenNV: staff.HoTenNV,
         Email: staff.Email,
         ChucVu: staff.ChucVu,
         quyenSuDung: staff.quyenSuDung,
+        Permissions: staff.Permissions, // Thêm trường này để phòng hờ
         DienThoai: staff.DienThoai,
         DiaChi: staff.DiaChi,
         GioiThieu: staff.GioiThieu,
@@ -50,6 +50,47 @@ exports.getCurrentStaff = async (req, res) => {
   }
 };
 
+// 🔑 Đăng nhập (Phải trả về Y HỆT hàm getCurrentStaff)
+exports.loginStaff = async (req, res) => {
+  try {
+    const { MSNV, Email, Password } = req.body;
+    let staff = null;
+
+    if (MSNV) {
+      staff = await Staff.findOne({ MSNV }).populate("quyenSuDung");
+    } else if (Email) {
+      staff = await Staff.findOne({ Email: Email.toLowerCase() }).populate("quyenSuDung");
+    }
+
+    if (!staff) return res.status(400).json({ message: "Tài khoản không tồn tại" });
+    if (staff.Status === 0) return res.status(401).json({ message: "Tài khoản bị khóa" });
+
+    const isMatch = await staff.comparePassword(Password);
+    if (!isMatch) return res.status(400).json({ message: "Sai mật khẩu" });
+
+    const token = generateToken(staff);
+
+    res.json({
+      message: "Đăng nhập thành công",
+      token,
+      staff: {
+        _id: staff._id, // Đồng nhất dùng _id
+        MSNV: staff.MSNV,
+        HoTenNV: staff.HoTenNV,
+        Email: staff.Email,
+        ChucVu: staff.ChucVu,
+        quyenSuDung: staff.quyenSuDung,
+        Permissions: staff.Permissions,
+        DienThoai: staff.DienThoai,
+        DiaChi: staff.DiaChi,
+        GioiThieu: staff.GioiThieu,
+        Status: staff.Status, // Bắt buộc phải có để Sidebar không bị lỗi ẩn menu
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
 // ✅ Tạo nhân viên (Admin tạo trực tiếp)
 exports.createStaff = async (req, res) => {
   try {
@@ -130,50 +171,7 @@ exports.createStaff = async (req, res) => {
   }
 };
 
-// 🔑 Đăng nhập
-exports.loginStaff = async (req, res) => {
-  try {
-    const { MSNV, Email, Password } = req.body;
 
-    // Tìm theo MSNV hoặc Email
-    let staff = null;
-    if (MSNV) {
-      staff = await Staff.findOne({ MSNV });
-    } else if (Email) {
-      staff = await Staff.findOne({ Email: Email.toLowerCase() });
-    }
-
-    if (!staff) {
-      return res.status(400).json({ message: "Tài khoản không tồn tại" });
-    }
-
-    // Kiểm tra Status
-    if (staff.Status === 0) {
-      return res.status(401).json({ message: "Tài khoản bị khóa" });
-    }
-
-    const isMatch = await staff.comparePassword(Password);
-    if (!isMatch) {
-      return res.status(400).json({ message: "Sai mật khẩu" });
-    }
-
-    const token = generateToken(staff);
-
-    res.json({
-      message: "Đăng nhập thành công",
-      token,
-      staff: {
-        id: staff._id,
-        MSNV: staff.MSNV,
-        HoTenNV: staff.HoTenNV,
-        Email: staff.Email,
-        ChucVu: staff.ChucVu,
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
 
 // 📋 Lấy danh sách nhân viên
 exports.getAllStaff = async (req, res) => {
