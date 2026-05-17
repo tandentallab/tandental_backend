@@ -32,6 +32,12 @@ const nhanVienSchema = new mongoose.Schema(
       enum: ["Đang làm", "Nghỉ việc"],
       default: "Đang làm",
     },
+
+    cccdImages: [
+      {
+        type: String,
+      },
+    ],
   },
   { timestamps: true }
 );

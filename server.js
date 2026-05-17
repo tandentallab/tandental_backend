@@ -87,6 +87,10 @@ const startServer = async () => {
     app.use("/api/baocao", baoCaoRoutes);
     app.use("/api/nhan-vien", nhanVienRoutes);
     app.use("/api/bang-luong", bangLuongRoutes);
+    app.use(
+      "/api/uploads",
+      express.static(path.join(__dirname, "public/uploads"))
+    );
     
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on port ${PORT}`);

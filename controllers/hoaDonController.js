@@ -42,6 +42,7 @@ exports.getDonHangChuaXuatHoaDon = async (req, res) => {
       "danhSachSanPham.loaiDon": "Mới",
     })
       .populate("bacSi", "hoVaTen")
+      .populate("benhNhan", "hoVaTen")
       .sort({ createdAt: -1 });
 
     res.json(donHangs);
