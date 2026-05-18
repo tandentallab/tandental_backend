@@ -54,6 +54,11 @@ exports.createDonHang = async (req, res) => {
                 const newDonHang = new DonHang({
                     ...req.body,
                     maDonHang,
+                    nhatKyChinhSua: [{
+                        nguoiThuc: req.body.nguoiThucDuyet || "Điều Phối",
+                        hanhDong: "Tạo đơn hàng",
+                        thoiGian: new Date(),
+                    }],
                 });
                 await newDonHang.save();
 
@@ -199,7 +204,20 @@ exports.getDonHangById = async (req, res) => {
 // [PUT] Cập nhật đơn hàng
 exports.updateDonHang = async (req, res) => {
     try {
-        const updatedDonHang = await DonHang.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' })
+        const { nhatKyLogEntry, nhatKyChinhSua: _nhatKy, nguoiThucDuyet: _nguoi, ...updateData } = req.body;
+
+        const updateOp = { $set: updateData };
+        if (nhatKyLogEntry) {
+            updateOp.$push = {
+                nhatKyChinhSua: {
+                    nguoiThuc: nhatKyLogEntry.nguoiThuc || "Điều Phối",
+                    hanhDong: nhatKyLogEntry.hanhDong || "Chỉnh sửa",
+                    thoiGian: new Date(),
+                },
+            };
+        }
+
+        const updatedDonHang = await DonHang.findByIdAndUpdate(req.params.id, updateOp, { new: true })
             .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe")
             .populate("bacSi", "hoVaTen soDienThoai email")
             .populate("benhNhan", "hoVaTen soHoSo soDienThoai")

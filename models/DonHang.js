@@ -109,6 +109,16 @@ const donHangSchema = new mongoose.Schema(
         chiDinhBacSi: String,
         ghiChuChung: String,
         ghiChuTaiChinh: String,
+        ghiChuSanXuat: String,
+
+        // Nhật ký chỉnh sửa
+        nhatKyChinhSua: [
+            {
+                nguoiThuc: { type: String, default: "Điều Phối" },
+                hanhDong: { type: String, required: true },
+                thoiGian: { type: Date, default: Date.now },
+            },
+        ],
 
         // Trạng thái đơn hàng (để quản lý luồng về sau)
         trangThai: {
