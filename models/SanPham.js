@@ -53,9 +53,9 @@ const sanPhamSchema = new mongoose.Schema(
         },
         // 👉 THÊM TRƯỜNG THỜI GIAN BẢO HÀNH MẶC ĐỊNH VÀO ĐÂY
         baoHanhMacDinh: {
-            type: String,
-            trim: true,
-            default: "",
+            type: Number,
+            min: 0,
+            default: 0,
         },
         moTa: {
             type: String,
