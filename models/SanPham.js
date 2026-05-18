@@ -14,7 +14,7 @@ const sanPhamSchema = new mongoose.Schema(
         },
         donGiaRieng: {
             type: Number,
-            default: null, // Để null nếu không có giá riêng, tiện cho việc kiểm tra logic sau này
+            default: null,
             min: [0, "Đơn giá riêng không được nhỏ hơn 0"],
         },
         loaiTinh: {
@@ -51,6 +51,12 @@ const sanPhamSchema = new mongoose.Schema(
             },
             required: [true, "Vui lòng chọn nhóm sản phẩm"],
         },
+        // 👉 THÊM TRƯỜNG THỜI GIAN BẢO HÀNH MẶC ĐỊNH VÀO ĐÂY
+        baoHanhMacDinh: {
+            type: String,
+            trim: true,
+            default: "",
+        },
         moTa: {
             type: String,
             trim: true,
@@ -64,13 +70,13 @@ const sanPhamSchema = new mongoose.Schema(
             },
             required: [true, "Vui lòng chọn loại (Sản xuất hoặc Dịch vụ)"],
         },
-quyTrinh: [{
-        tenCongDoan: String, // Lấy từ "Kho công đoạn" sang
-        thuTu: Number        // Số thứ tự 1, 2, 3 do bạn sắp xếp
-    }],
+        quyTrinh: [{
+            tenCongDoan: String,
+            thuTu: Number
+        }],
     },
     {
-        timestamps: true, // Tự động thêm createdAt và updatedAt
+        timestamps: true,
     }
 );
 
