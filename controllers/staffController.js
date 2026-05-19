@@ -1,15 +1,17 @@
 const Staff = require("../models/Staff");
 const jwt = require("jsonwebtoken");
-const bcrypt = require("bcrypt");
+const { resolveAppRoleFromStaff } = require("../utils/roleResolver");
 
 // 🔑 Tạo JWT
 const generateToken = (staff) => {
+  const appRole = resolveAppRoleFromStaff(staff);
+
   return jwt.sign(
     {
       id: staff._id,
       MSNV: staff.MSNV,
       Email: staff.Email,
-      role: staff.ChucVu,
+      appRole,
     },
     process.env.JWT_SECRET,
     {
@@ -36,7 +38,7 @@ exports.getCurrentStaff = async (req, res) => {
         MSNV: staff.MSNV,
         HoTenNV: staff.HoTenNV,
         Email: staff.Email,
-        ChucVu: staff.ChucVu,
+        appRole: resolveAppRoleFromStaff(staff),
         quyenSuDung: staff.quyenSuDung,
         Permissions: staff.Permissions, // Thêm trường này để phòng hờ
         DienThoai: staff.DienThoai,
@@ -94,7 +96,7 @@ exports.loginStaff = async (req, res) => {
 // ✅ Tạo nhân viên (Admin tạo trực tiếp)
 exports.createStaff = async (req, res) => {
   try {
-    const { HoTenNV, Email, Password, ChucVu, Permissions, Status, MSNV, quyenSuDung, DienThoai, DiaChi, GioiThieu } = req.body;
+    const { HoTenNV, Email, Password, Permissions, Status, MSNV, quyenSuDung, DienThoai, DiaChi, GioiThieu } = req.body;
 
     // Kiểm tra Email bắt buộc
     if (!Email) {
@@ -117,6 +119,10 @@ exports.createStaff = async (req, res) => {
       return res.status(400).json({ message: "Mật khẩu là bắt buộc" });
     }
 
+    if (!quyenSuDung) {
+      return res.status(400).json({ message: "Quyền sử dụng là bắt buộc" });
+    }
+
     // Kiểm tra Email đã tồn tại
     const emailExist = await Staff.findOne({ Email: Email.toLowerCase() });
     if (emailExist) {
@@ -137,8 +143,7 @@ exports.createStaff = async (req, res) => {
       HoTenNV,
       Email: Email.toLowerCase(),
       Password,
-      ChucVu: ChucVu || "Thành viên",
-      quyenSuDung: quyenSuDung || null,
+      quyenSuDung,
       DienThoai: DienThoai || "",
       DiaChi: DiaChi || "",
       GioiThieu: GioiThieu || "",
@@ -157,7 +162,7 @@ exports.createStaff = async (req, res) => {
         MSNV: staffWithQuyens.MSNV,
         HoTenNV: staffWithQuyens.HoTenNV,
         Email: staffWithQuyens.Email,
-        ChucVu: staffWithQuyens.ChucVu,
+        appRole: resolveAppRoleFromStaff(staffWithQuyens),
         quyenSuDung: staffWithQuyens.quyenSuDung,
         DienThoai: staffWithQuyens.DienThoai,
         DiaChi: staffWithQuyens.DiaChi,
@@ -171,7 +176,50 @@ exports.createStaff = async (req, res) => {
   }
 };
 
+exports.loginStaff = async (req, res) => {
+  try {
+    const { MSNV, Email, Password } = req.body;
+    // Tìm theo MSNV hoặc Email
+    let staff = null;
+    if (MSNV) {
+      staff = await Staff.findOne({ MSNV }).populate("quyenSuDung");
+    } else if (Email) {
+      staff = await Staff.findOne({ Email: Email.toLowerCase() }).populate("quyenSuDung");
+    }
 
+    if (!staff) {
+      return res.status(400).json({ message: "Tài khoản không tồn tại" });
+    }
+
+    // Kiểm tra Status
+    if (staff.Status === 0) {
+      return res.status(401).json({ message: "Tài khoản bị khóa" });
+    }
+
+    const isMatch = await staff.comparePassword(Password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Sai mật khẩu" });
+    }
+
+    const token = generateToken(staff);
+    const appRole = resolveAppRoleFromStaff(staff);
+
+    res.json({
+      message: "Đăng nhập thành công",
+      token,
+      staff: {
+        id: staff._id,
+        MSNV: staff.MSNV,
+        HoTenNV: staff.HoTenNV,
+        Email: staff.Email,
+        appRole,
+        quyenSuDung: staff.quyenSuDung || null,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
 
 // 📋 Lấy danh sách nhân viên
 exports.getAllStaff = async (req, res) => {
@@ -234,6 +282,15 @@ exports.updateStaff = async (req, res) => {
       }
     }
 
+    if (Object.prototype.hasOwnProperty.call(req.body, "quyenSuDung") && !req.body.quyenSuDung) {
+      return res.status(400).json({ message: "Quyền sử dụng không được để trống" });
+    }
+
+    // Không cho cập nhật lại field Vai trò cũ
+    if (Object.prototype.hasOwnProperty.call(req.body, "ChucVu")) {
+      delete req.body.ChucVu;
+    }
+
     Object.assign(staff, req.body);
 
     // Nếu đổi password → hash lại
@@ -252,7 +309,7 @@ exports.updateStaff = async (req, res) => {
         MSNV: updatedStaff.MSNV,
         HoTenNV: updatedStaff.HoTenNV,
         Email: updatedStaff.Email,
-        ChucVu: updatedStaff.ChucVu,
+        appRole: resolveAppRoleFromStaff(updatedStaff),
         quyenSuDung: updatedStaff.quyenSuDung,
         DienThoai: updatedStaff.DienThoai,
         DiaChi: updatedStaff.DiaChi,

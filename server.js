@@ -36,6 +36,7 @@ const allowedOrigins = [
   "https://tan-dental-frontend-snmb.vercel.app",
   "https://tan-dental-frontend-yzw6.vercel.app",
   "https://tandental.vercel.app",
+  "http://127.0.0.1:3000",
   process.env.ADMIN_FRONTEND_URL,
   process.env.PUBLIC_FRONTEND_URL,
 ].filter(Boolean);
@@ -43,7 +44,8 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+
+      if (!origin || allowedOrigins.includes(origin) || origin.startsWith("http://192.168.") || origin.startsWith("http://172.")) {
         return callback(null, true);
       }
       return callback(new Error("Not allowed by CORS"));
@@ -91,12 +93,18 @@ const startServer = async () => {
     app.use("/api/nhan-vien", nhanVienRoutes);
     app.use("/api/bang-luong", bangLuongRoutes);
     app.use("/api/search", searchRoutes);
-    app.listen(PORT, () => {
+    app.use(
+      "/api/uploads",
+      express.static(path.join(__dirname, "public/uploads"))
+    );
+
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on port ${PORT}`);
     });
   } catch (error) {
     console.error(error);
   }
 };
+
 
 startServer();

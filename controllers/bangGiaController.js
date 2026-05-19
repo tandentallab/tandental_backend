@@ -101,3 +101,72 @@ exports.deleteBangGia = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+exports.applyBangGiaTemplate  = async (req, res) => {
+  try {
+    const {
+      sourceNhaKhoaId,
+      targetNhaKhoaId,
+    } = req.body;
+
+    // validate
+    if (
+      !sourceNhaKhoaId ||
+      !targetNhaKhoaId
+    ) {
+      return res.status(400).json({
+        message:
+          "Thiếu sourceNhaKhoaId hoặc targetNhaKhoaId",
+      });
+    }
+
+    // tránh apply chính nó
+    if (
+      sourceNhaKhoaId ===
+      targetNhaKhoaId
+    ) {
+      return res.status(400).json({
+        message:
+          "Không thể áp dụng cho cùng nha khoa",
+      });
+    }
+
+    // lấy bảng giá nguồn
+    const sourceBangGia =
+      await BangGia.find({
+        nhaKhoaId: sourceNhaKhoaId,
+      });
+
+    // xóa bảng giá cũ của target
+    await BangGia.deleteMany({
+      nhaKhoaId: targetNhaKhoaId,
+    });
+
+    // clone dữ liệu
+    const cloneData = sourceBangGia.map(
+      (item) => ({
+        nhaKhoaId: targetNhaKhoaId,
+        sanPhamId: item.sanPhamId,
+        donGia: item.donGia,
+      })
+    );
+
+    // insert mới
+    if (cloneData.length > 0) {
+      await BangGia.insertMany(cloneData);
+    }
+
+    return res.json({
+      success: true,
+      message:
+        "Áp dụng bảng giá thành công",
+      total: cloneData.length,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error",
+    });
+  }
+};

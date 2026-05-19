@@ -11,17 +11,17 @@ const {
   deleteStaff,
 } = require("../controllers/staffController");
 
-const { verifyToken } = require("../middleware/authMiddleware");
+const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
 
 // 🔓 public
-router.post("/register", createStaff);
+router.post("/register", verifyToken, authorizeRoles(APP_ROLES.ADMIN), createStaff);
 router.post("/login", loginStaff);
 
 // 🔒 private
 router.get("/me", verifyToken, getCurrentStaff); // ← Phải để TRƯỚC /:id
-router.get("/", verifyToken, getAllStaff);
-router.get("/:id", verifyToken, getStaffById);
-router.put("/:id", verifyToken, updateStaff);
-router.delete("/:id", verifyToken, deleteStaff);
+router.get("/", verifyToken, authorizeRoles(APP_ROLES.ADMIN), getAllStaff);
+router.get("/:id", verifyToken, authorizeRoles(APP_ROLES.ADMIN), getStaffById);
+router.put("/:id", verifyToken, authorizeRoles(APP_ROLES.ADMIN), updateStaff);
+router.delete("/:id", verifyToken, authorizeRoles(APP_ROLES.ADMIN), deleteStaff);
 
 module.exports = router;
