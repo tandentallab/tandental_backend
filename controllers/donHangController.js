@@ -190,8 +190,7 @@ exports.getDonHangById = async (req, res) => {
             .populate("bacSi", "hoVaTen soDienThoai email")
             .populate("benhNhan", "hoVaTen soHoSo soDienThoai")
             .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh baoHanhMacDinh")
-            .populate("danhSachSanPham.donHangCu");
-
+            .populate("danhSachSanPham.donHangCu")
         if (!donHang) {
             return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
         }

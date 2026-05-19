@@ -57,7 +57,10 @@ const phieuBaoHanhSchema = new mongoose.Schema(
         },
       },
     ],
-    mauTheTi: String, // Mẫu thẻ (Mẫu in Dbio, Mẫu in UNC, Mẫu thẻ Lab)
+    mauThe: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: "MauTheBaoHanh" 
+    },
     soDienThoai: String,
     ghiChu: String,
   },

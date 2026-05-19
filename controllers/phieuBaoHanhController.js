@@ -23,7 +23,13 @@ const generateUniqueQRCode = async () => {
 // [POST] Tạo hoặc cập nhật phiếu bảo hành (1 phiếu cho cả đơn hàng)
 exports.createPhieuBaoHanh = async (req, res) => {
   try {
-    const { donHang, danhSachBaoHanh, mauTheTi, ghiChu } = req.body;
+    // 1. SỬA ĐỔI: Khai báo mauTheId thay vì mauTheTi
+    const { donHang, danhSachBaoHanh, mauTheId, ghiChu } = req.body;
+
+    // 2. Kiểm tra bắt buộc mẫu thẻ
+    if (!mauTheId) {
+        return res.status(400).json({ success: false, message: "Vui lòng chọn mẫu thẻ bảo hành" });
+    }
 
     if (!donHang) {
       return res.status(400).json({ success: false, message: "Thiếu mã đơn hàng" });
@@ -61,18 +67,19 @@ exports.createPhieuBaoHanh = async (req, res) => {
     // Kiểm tra phiếu bảo hành đã tồn tại chưa
     let phieu = await PhieuBaoHanh.findOne({ donHang });
 
+    // 3. SỬA ĐỔI: Dùng mauThe (đúng tên field trong Schema) thay vì mauTheTi
     const baseData = {
       donHang,
       nhaKhoa: donHangRecord.nhaKhoa,
       bacSi: donHangRecord.bacSi,
       benhNhan: donHangRecord.benhNhan,
-      mauTheTi: mauTheTi || "Mẫu in Lab",
+      mauThe: mauTheId, // Lưu ID của mẫu thẻ (ObjectId)
       soDienThoai: nhaKhoaRecord?.soDienThoai || "",
       ghiChu: ghiChu || "",
     };
 
     if (phieu) {
-      // Update phiếu bảo hành hiện tại: APPEND sản phẩm mới vào danh sách (không trùng)
+      // Update phiếu bảo hành hiện tại
       const existingSanPhamIds = phieu.danhSachBaoHanh.map(item => 
         item.sanPham._id ? item.sanPham._id.toString() : item.sanPham.toString()
       );
@@ -94,43 +101,30 @@ exports.createPhieuBaoHanh = async (req, res) => {
         ? donHangCodeForRef.slice(-6)
         : donHangRecord._id.toString().substring(donHangRecord._id.toString().length - 6).toUpperCase();
 
-        const maBaoHanhFromOrder = donHangRecord.maDonHang || null;
+      const maBaoHanhFromOrder = donHangRecord.maDonHang || null;
 
-        phieu = new PhieuBaoHanh({
-          ...baseData,
-          danhSachBaoHanh: safeDanhSachBaoHanh,
-          maBaoHanh: maBaoHanhFromOrder || `TANBH${donHangSuffix}`,
-          maQR: await generateUniqueQRCode(),
-        });
+      phieu = new PhieuBaoHanh({
+        ...baseData,
+        danhSachBaoHanh: safeDanhSachBaoHanh,
+        maBaoHanh: maBaoHanhFromOrder || `TANBH${donHangSuffix}`,
+        maQR: await generateUniqueQRCode(), // Đảm bảo hàm này đã được định nghĩa ở đâu đó trong file
+      });
     }
 
-      // Nếu cập nhật hoặc tạo, đảm bảo maBaoHanh bằng mã đơn hàng khi tồn tại
-      if (donHangRecord.maDonHang) {
-        phieu.maBaoHanh = donHangRecord.maDonHang;
-      }
+    if (donHangRecord.maDonHang) {
+      phieu.maBaoHanh = donHangRecord.maDonHang;
+    }
+    
     await phieu.save();
 
+    // Populate dữ liệu để trả về
     const populatedPhieu = await PhieuBaoHanh.findById(phieu._id)
-      .populate({
-        path: "donHang",
-        select: "maDonHang ngayNhan",
-      })
-      .populate({
-        path: "nhaKhoa",
-        select: "tenGiaoDich hoVaTen",
-      })
-      .populate({
-        path: "bacSi",
-        select: "hoVaTen soDienThoai",
-      })
-      .populate({
-        path: "benhNhan",
-        select: "hoVaTen soDienThoai",
-      })
-      .populate({
-        path: "danhSachBaoHanh.sanPham",
-        select: "tenSanPham",
-      });
+      .populate("donHang", "maDonHang ngayNhan")
+      .populate("nhaKhoa", "tenGiaoDich hoVaTen")
+      .populate("bacSi", "hoVaTen soDienThoai")
+      .populate("benhNhan", "hoVaTen soDienThoai")
+      .populate("danhSachBaoHanh.sanPham", "tenSanPham")
+      .populate("mauThe", "tenMau"); // Populate thêm cả mẫu thẻ để frontend hiển thị tên
 
     res.status(201).json({
       success: true,
