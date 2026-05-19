@@ -26,7 +26,7 @@ const phieuBaoHanhSchema = new mongoose.Schema(
     },
     bacSi: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Staff",
+      ref: "NguoiLienHe",
     },
     benhNhan: {
       type: mongoose.Schema.Types.ObjectId,
