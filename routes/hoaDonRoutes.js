@@ -29,7 +29,6 @@ router.get(
 );
 
 
-
 // Lấy danh sách hóa đơn theo nha khoa
 router.get("/nha-khoa/:nhaKhoaId", hoaDonController.getAllHoaDon);
 

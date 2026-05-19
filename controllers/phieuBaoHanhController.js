@@ -66,14 +66,26 @@ exports.createPhieuBaoHanh = async (req, res) => {
       nhaKhoa: donHangRecord.nhaKhoa,
       bacSi: donHangRecord.bacSi,
       benhNhan: donHangRecord.benhNhan,
-      danhSachBaoHanh: safeDanhSachBaoHanh,
       mauTheTi: mauTheTi || "Mẫu in Lab",
       soDienThoai: nhaKhoaRecord?.soDienThoai || "",
       ghiChu: ghiChu || "",
     };
 
     if (phieu) {
-      // Update phiếu bảo hành hiện tại
+      // Update phiếu bảo hành hiện tại: APPEND sản phẩm mới vào danh sách (không trùng)
+      const existingSanPhamIds = phieu.danhSachBaoHanh.map(item => 
+        item.sanPham._id ? item.sanPham._id.toString() : item.sanPham.toString()
+      );
+      
+      const newProducts = safeDanhSachBaoHanh.filter(item => {
+        const itemId = item.sanPham._id ? item.sanPham._id.toString() : item.sanPham.toString();
+        return !existingSanPhamIds.includes(itemId);
+      });
+      
+      if (newProducts.length > 0) {
+        phieu.danhSachBaoHanh.push(...newProducts);
+      }
+      
       Object.assign(phieu, baseData);
     } else {
       // Tạo phiếu bảo hành mới
@@ -86,6 +98,7 @@ exports.createPhieuBaoHanh = async (req, res) => {
 
         phieu = new PhieuBaoHanh({
           ...baseData,
+          danhSachBaoHanh: safeDanhSachBaoHanh,
           maBaoHanh: maBaoHanhFromOrder || `TANBH${donHangSuffix}`,
           maQR: await generateUniqueQRCode(),
         });
@@ -253,7 +266,7 @@ exports.updatePhieuBaoHanh = async (req, res) => {
     const updatedPhieu = await PhieuBaoHanh.findByIdAndUpdate(
       req.params.id,
       req.body,
-      { returnDocument: "after" }
+      { new: true }
     )
       .populate({
         path: "donHang",
