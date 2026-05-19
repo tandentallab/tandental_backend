@@ -61,6 +61,12 @@ const donHangSchema = new mongoose.Schema(
                 },
                 mau: String,
                 ghiChu: String,
+                yeuCauThu: [
+                    {
+                        congDoan: { type: String },
+                        ngayTao: { type: Date, default: Date.now },
+                    },
+                ],
                 trangThaiCongDoan: [
                     {
                         thuTu: { type: Number, required: true },
