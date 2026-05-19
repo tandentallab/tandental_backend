@@ -42,6 +42,7 @@ exports.getDonHangChuaXuatHoaDon = async (req, res) => {
       "danhSachSanPham.loaiDon": "Mới",
     })
       .populate("bacSi", "hoVaTen")
+      .populate("benhNhan", "hoVaTen")
       .sort({ createdAt: -1 });
 
     res.json(donHangs);
@@ -77,9 +78,9 @@ exports.countDonHangChuaXuatHoaDonAll = async (
             _id: "$nhaKhoa",
 
             soDonHangChuaXuatHoaDon:
-              {
-                $sum: 1,
-              },
+            {
+              $sum: 1,
+            },
 
             // 🔥 ngày nhận đơn hàng gần nhất chưa xuất
             ngayDonHangGanNhat: {
@@ -275,7 +276,7 @@ exports.createHoaDon = async (
           ghiChuChoKhachHang = "",
 
           chinhSachThanhToan =
-            "Thanh toán cuối tháng",
+          "Thanh toán cuối tháng",
         } = req.body;
 
         // ===== VALIDATE =====
@@ -761,30 +762,30 @@ exports.updateHoaDon = async (req, res) => {
     }
 
     // ================= RECALCULATE =================
-hoaDon.thanhTien = calculateThanhTien({
-  tongTien: hoaDon.tongTien,
-  tongChietKhau: hoaDon.tongChietKhau,
-  thue: hoaDon.thue,
-  chiPhiKhac: hoaDon.chiPhiKhac,
-});
+    hoaDon.thanhTien = calculateThanhTien({
+      tongTien: hoaDon.tongTien,
+      tongChietKhau: hoaDon.tongChietKhau,
+      thue: hoaDon.thue,
+      chiPhiKhac: hoaDon.chiPhiKhac,
+    });
 
-hoaDon.conLai = Math.max(
-  0,
-  roundMoney(
-    hoaDon.thanhTien - hoaDon.daThanhToan
-  )
-);
+    hoaDon.conLai = Math.max(
+      0,
+      roundMoney(
+        hoaDon.thanhTien - hoaDon.daThanhToan
+      )
+    );
 
-// auto trạng thái
-if (hoaDon.conLai <= 0) {
-  hoaDon.trangThai = "Đã thanh toán";
-} else if (hoaDon.daThanhToan > 0) {
-  hoaDon.trangThai =
-    "Thanh toán một phần";
-} else {
-  hoaDon.trangThai =
-    "Chưa thanh toán";
-}
+    // auto trạng thái
+    if (hoaDon.conLai <= 0) {
+      hoaDon.trangThai = "Đã thanh toán";
+    } else if (hoaDon.daThanhToan > 0) {
+      hoaDon.trangThai =
+        "Thanh toán một phần";
+    } else {
+      hoaDon.trangThai =
+        "Chưa thanh toán";
+    }
 
     if (ghiChuNoiBo !== undefined) {
       hoaDon.ghiChuNoiBo =
@@ -891,14 +892,14 @@ if (hoaDon.conLai <= 0) {
       // hoaDon.thanhTien += hoaDon.thanhTien * (hoaDon.thue / 100)
 
       hoaDon.thanhTien =
-  calculateThanhTien({
-    tongTien: moiTongTien,
-    tongChietKhau:
-      moiTongChietKhau,
-    thue: hoaDon.thue,
-    chiPhiKhac:
-      hoaDon.chiPhiKhac,
-  });
+        calculateThanhTien({
+          tongTien: moiTongTien,
+          tongChietKhau:
+            moiTongChietKhau,
+          thue: hoaDon.thue,
+          chiPhiKhac:
+            hoaDon.chiPhiKhac,
+        });
 
       hoaDon.conLai =
         hoaDon.thanhTien -
@@ -973,15 +974,15 @@ exports.thanhToanHoaDon = async (
     hoaDon.daThanhToan +=
       Number(soTienThanhToan);
 
-   hoaDon.conLai = Math.max(
-  0,
-  roundMoney(
-    hoaDon.thanhTien -
-      hoaDon.daThanhToan
-  )
-);
+    hoaDon.conLai = Math.max(
+      0,
+      roundMoney(
+        hoaDon.thanhTien -
+        hoaDon.daThanhToan
+      )
+    );
 
-if (hoaDon.conLai <= 0){
+    if (hoaDon.conLai <= 0) {
       hoaDon.trangThai =
         "Đã thanh toán";
     } else {

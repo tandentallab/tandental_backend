@@ -19,13 +19,14 @@ const quyenSuDungRoutes = require("./routes/quyenSuDungRoutes");
 const congTyRoutes = require("./routes/congTyRoutes");
 const nhaCungCapRoutes = require("./routes/nhaCungCapRoutes");
 const phieuBaoHanhRoutes = require("./routes/phieuBaoHanhRoutes");
-const mauTheBaoHanhRoutes = require("./routes/mauTheBaoHanhRoutes");
+// const mauTheBaoHanhRoutes = require("./routes/mauTheBaoHanhRoutes");
 const publicRoutes = require("./routes/publicRoutes");
 const baoCaoRoutes = require('./routes/baoCaoRoutes');
 const phieuThuRoutes = require("./routes/phieuThuRoutes");
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const nhanVienRoutes = require("./routes/nhanVienRoutes");
 const bangLuongRoutes = require("./routes/bangLuongRoutes");
+const searchRoutes = require("./routes/searchRoutes");
 
 
 const app = express();
@@ -36,6 +37,7 @@ const allowedOrigins = [
   "https://tan-dental-frontend-snmb.vercel.app",
   "https://tan-dental-frontend-yzw6.vercel.app",
   "https://tandental.vercel.app",
+  "http://127.0.0.1:3000",
   process.env.ADMIN_FRONTEND_URL,
   process.env.PUBLIC_FRONTEND_URL,
 ].filter(Boolean);
@@ -43,7 +45,7 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      
+
       if (!origin || allowedOrigins.includes(origin) || origin.startsWith("http://192.168.") || origin.startsWith("http://172.")) {
         return callback(null, true);
       }
@@ -86,12 +88,17 @@ const startServer = async () => {
     app.use("/api/cong-ty", congTyRoutes);
     app.use("/api/nha-cung-cap", nhaCungCapRoutes);
     app.use("/api/phieu-bao-hanh", phieuBaoHanhRoutes);
-    app.use("/api/mau-the-bao-hanh", mauTheBaoHanhRoutes);
+    // app.use("/api/mau-the-bao-hanh", mauTheBaoHanhRoutes);
     app.use("/api/public", publicRoutes);
     app.use("/api/phieu-thu", phieuThuRoutes);
     app.use("/api/baocao", baoCaoRoutes);
     app.use("/api/nhan-vien", nhanVienRoutes);
     app.use("/api/bang-luong", bangLuongRoutes);
+    app.use("/api/search", searchRoutes);
+    app.use(
+      "/api/uploads",
+      express.static(path.join(__dirname, "public/uploads"))
+    );
 
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);

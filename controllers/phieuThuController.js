@@ -337,3 +337,57 @@ exports.getPhieuThuById = async (req, res) => {
 //     res.status(500).json({ message: err.message });
 //   }
 // };
+
+
+// ================= LẤY PHIẾU THU THEO HÓA ĐƠN ID =================
+exports.getPhieuThuByHoaDonId = async (
+  req,
+  res
+) => {
+  try {
+    const { hoaDonId } = req.params;
+
+    // validate ObjectId
+    if (
+      !mongoose.Types.ObjectId.isValid(
+        hoaDonId
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Hoa đơn ID không hợp lệ",
+      });
+    }
+
+    // tìm phiếu thu có chứa hóa đơn
+    const danhSachPhieuThu =
+      await PhieuThu.find({
+        "danhSachHoaDon.hoaDon":
+          hoaDonId,
+      })
+        .populate({
+          path: "danhSachHoaDon.hoaDon",
+          select:
+            "soHoaDon thanhTien daThanhToan conLai trangThai",
+        })
+        .populate(
+          "nguoiTao",
+          "hoVaTen email"
+        )
+        .sort({
+          ngayThu: -1,
+        });
+
+    res.json({
+      success: true,
+      count:
+        danhSachPhieuThu.length,
+      data: danhSachPhieuThu,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};

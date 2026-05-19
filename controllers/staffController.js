@@ -176,7 +176,50 @@ exports.createStaff = async (req, res) => {
   }
 };
 
+exports.loginStaff = async (req, res) => {
+  try {
+    const { MSNV, Email, Password } = req.body;
+    // Tìm theo MSNV hoặc Email
+    let staff = null;
+    if (MSNV) {
+      staff = await Staff.findOne({ MSNV }).populate("quyenSuDung");
+    } else if (Email) {
+      staff = await Staff.findOne({ Email: Email.toLowerCase() }).populate("quyenSuDung");
+    }
 
+    if (!staff) {
+      return res.status(400).json({ message: "Tài khoản không tồn tại" });
+    }
+
+    // Kiểm tra Status
+    if (staff.Status === 0) {
+      return res.status(401).json({ message: "Tài khoản bị khóa" });
+    }
+
+    const isMatch = await staff.comparePassword(Password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Sai mật khẩu" });
+    }
+
+    const token = generateToken(staff);
+    const appRole = resolveAppRoleFromStaff(staff);
+
+    res.json({
+      message: "Đăng nhập thành công",
+      token,
+      staff: {
+        id: staff._id,
+        MSNV: staff.MSNV,
+        HoTenNV: staff.HoTenNV,
+        Email: staff.Email,
+        appRole,
+        quyenSuDung: staff.quyenSuDung || null,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
 
 // 📋 Lấy danh sách nhân viên
 exports.getAllStaff = async (req, res) => {

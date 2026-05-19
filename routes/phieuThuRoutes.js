@@ -17,4 +17,9 @@ router.post("/", verifyToken, allowAdminAndKeToan, phieuThuController.createPhie
 // Cập nhật phiếu thu
 router.patch("/:id", verifyToken, allowAdminAndKeToan, phieuThuController.updatePhieuThu);
 
+router.get(
+  "/hoa-don/:hoaDonId",
+  phieuThuController.getPhieuThuByHoaDonId
+);
+
 module.exports = router;
