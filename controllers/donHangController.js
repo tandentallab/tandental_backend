@@ -2,6 +2,7 @@ const DonHang = require("../models/DonHang");
 const BenhNhan = require("../models/BenhNhan");
 const NguoiLienHe = require("../models/NguoiLienHe");
 const NhaKhoa = require("../models/NhaKhoa");
+const PhieuBaoHanh = require("../models/PhieuBaoHanh");
 
 const buildOrderCodePrefix = (date = new Date()) => {
     const yy = String(date.getFullYear()).slice(-2);
@@ -188,14 +189,22 @@ exports.getDonHangById = async (req, res) => {
             .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe")
             .populate("bacSi", "hoVaTen soDienThoai email")
             .populate("benhNhan", "hoVaTen soHoSo soDienThoai")
-            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh")
+            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh baoHanhMacDinh")
             .populate("danhSachSanPham.donHangCu");
 
         if (!donHang) {
             return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
         }
 
-        res.status(200).json({ success: true, data: donHang });
+        // Query phiếu bảo hành từ collection (không dùng reference)
+        const phieuBaoHanh = await PhieuBaoHanh.findOne({ donHang: req.params.id })
+            .populate("danhSachBaoHanh.sanPham", "tenSanPham");
+
+        // Convert Mongoose doc sang object và thêm phiếu bảo hành
+        const donHangObj = donHang.toObject ? donHang.toObject() : donHang;
+        donHangObj.phieuBaoHanh = phieuBaoHanh || null;
+
+        res.status(200).json({ success: true, data: donHangObj });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -221,14 +230,22 @@ exports.updateDonHang = async (req, res) => {
             .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe")
             .populate("bacSi", "hoVaTen soDienThoai email")
             .populate("benhNhan", "hoVaTen soHoSo soDienThoai")
-            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh")
+            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh baoHanhMacDinh")
             .populate("danhSachSanPham.donHangCu");
 
         if (!updatedDonHang) {
             return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
         }
 
-        res.status(200).json({ success: true, data: updatedDonHang });
+        // Query phiếu bảo hành từ collection
+        const phieuBaoHanh = await PhieuBaoHanh.findOne({ donHang: req.params.id })
+            .populate("danhSachBaoHanh.sanPham", "tenSanPham");
+
+        // Convert Mongoose doc sang object và thêm phiếu bảo hành
+        const updatedDonHangObj = updatedDonHang.toObject ? updatedDonHang.toObject() : updatedDonHang;
+        updatedDonHangObj.phieuBaoHanh = phieuBaoHanh || null;
+
+        res.status(200).json({ success: true, data: updatedDonHangObj });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -253,7 +270,7 @@ exports.updateCongDoanStatus = async (req, res) => {
             sp.trangThaiCongDoan.push({ thuTu, trangThai });
         }
         await donHang.save();
-        await donHang.populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh");
+        await donHang.populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh baoHanhMacDinh");
         res.status(200).json({ success: true, data: donHang });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
