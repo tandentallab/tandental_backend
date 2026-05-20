@@ -372,7 +372,8 @@ exports.updateHoaDon = async (req, res) => {
   try {
     const { id } = req.params;
     const {
-      danhSachDonHangIds, // mảng donHangId mới từ FE (nếu có thay đổi)
+      danhSachDonHangIds,
+      danhSachSanPham: danhSachSanPhamMoi,
       chietKhau,
       thue,
       chiPhiKhac,
@@ -394,7 +395,7 @@ exports.updateHoaDon = async (req, res) => {
     if (ghiChuChoKhachHang !== undefined) hoaDon.ghiChuChoKhachHang = ghiChuChoKhachHang;
     if (chinhSachThanhToan !== undefined) hoaDon.chinhSachThanhToan = chinhSachThanhToan;
 
-    // Nếu FE gửi lại danh sách đơn hàng mới → rebuild
+    // Nếu FE gửi lại danh sách đơn hàng mới → rebuild toàn bộ
     if (danhSachDonHangIds) {
       const oldDonHangIds = [...new Set(hoaDon.danhSachSanPham.map((sp) => sp.donHang.toString()))];
       const newDonHangIds = danhSachDonHangIds.map((id) => id.toString());
@@ -412,6 +413,30 @@ exports.updateHoaDon = async (req, res) => {
 
       hoaDon.danhSachSanPham = danhSachSanPham;
       hoaDon.tongCong = roundMoney(tongCong);
+
+      // Nếu FE gửi danhSachSanPham để cập nhật giảm giá / ghi chú từng sản phẩm
+    } else if (danhSachSanPhamMoi?.length) {
+      danhSachSanPhamMoi.forEach((spMoi) => {
+        // Match theo sanPhamDonHangId nếu có, fallback theo donHang + sanPham
+        const sp = hoaDon.danhSachSanPham.find((s) =>
+          spMoi.sanPhamDonHangId
+            ? s.sanPhamDonHangId?.toString() === spMoi.sanPhamDonHangId.toString()
+            : s.donHang.toString() === spMoi.donHang?.toString() &&
+            s.sanPham.toString() === spMoi.sanPham?.toString()
+        );
+
+        if (!sp) return;
+
+        if (spMoi.giamGia !== undefined) sp.giamGia = Number(spMoi.giamGia);
+        if (spMoi.loaiGiamGia !== undefined) sp.loaiGiamGia = spMoi.loaiGiamGia;
+        if (spMoi.tongCongSanPham !== undefined) sp.tongCongSanPham = Number(spMoi.tongCongSanPham);
+        if (spMoi.ghiChu !== undefined) sp.ghiChu = spMoi.ghiChu;
+      });
+
+      // Tính lại tongCong từ tongCongSanPham các sản phẩm
+      hoaDon.tongCong = roundMoney(
+        hoaDon.danhSachSanPham.reduce((s, sp) => s + (sp.tongCongSanPham || 0), 0)
+      );
     }
 
     hoaDon.giaTriThanhToan = calculateGiaTriThanhToan({
@@ -430,7 +455,6 @@ exports.updateHoaDon = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
 // ================= THANH TOÁN HÓA ĐƠN =================
 exports.thanhToanHoaDon = async (req, res) => {
   try {
