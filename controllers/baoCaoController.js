@@ -176,25 +176,27 @@ exports.getDoanhThuThang = async (req, res) => {
                 $facet: {
                     trongThang: [
                         { $match: { ngayXuatHoaDon: { $gte: startOfMonth, $lte: endOfMonth } } },
-                        { $group: { _id: "$nhaKhoa", phatSinh: { $sum: "$thanhTien" } } },
+                        // SỬA Ở ĐÂY: Thay $thanhTien thành $giaTriThanhToan (tổng tiền hóa đơn)
+                        { $group: { _id: "$nhaKhoa", phatSinh: { $sum: "$giaTriThanhToan" } } },
                     ],
                     truocThang: [
                         { $match: { ngayXuatHoaDon: { $lt: startOfMonth } } },
-                        { $group: { _id: "$nhaKhoa", tong: { $sum: "$thanhTien" } } },
+                        // SỬA Ở ĐÂY: Thay $thanhTien thành $giaTriThanhToan
+                        { $group: { _id: "$nhaKhoa", tong: { $sum: "$giaTriThanhToan" } } },
                     ],
                 },
             },
         ]);
 
-        // ── 2. PhieuThu: ĐÃ FIX LỖI MẢNG DANH SÁCH HÓA ĐƠN ───────────────────
+        // ── 2. PhieuThu: Tính Tiền thanh toán ──────────────────────────────────
         const [ptFacet] = await PhieuThu.aggregate([
             // B1: Tách mảng danhSachHoaDon ra thành từng dòng riêng biệt
             { $unwind: "$danhSachHoaDon" },
             // B2: Lookup lấy thông tin Hóa đơn tương ứng với từng dòng
             {
                 $lookup: {
-                    from: "hoadons",
-                    localField: "danhSachHoaDon.hoaDon", // Gọi đúng đường dẫn
+                    from: "hoadons", // Đảm bảo tên collection này đúng trong MongoDB (thường là số nhiều viết thường)
+                    localField: "danhSachHoaDon.hoaDon",
                     foreignField: "_id",
                     as: "hd",
                 },
@@ -251,7 +253,7 @@ exports.getDoanhThuThang = async (req, res) => {
                 const phatSinh = hdTrong[id]?.phatSinh || 0;
                 const thanhToan = ptTrong[id]?.thanhToan || 0;
 
-                // Nợ cuối kỳ
+                // Nợ cuối kỳ = Nợ đầu + Phát sinh - Đã trả
                 const conNo = noDauKy + phatSinh - thanhToan;
 
                 tongNoDauKy += noDauKy;
@@ -262,7 +264,7 @@ exports.getDoanhThuThang = async (req, res) => {
                 return { nhaKhoaId: id, tenNhaKhoa, noDauKy, phatSinh, thanhToan, conNo };
             })
             // Chỉ hiển thị nha khoa nào có biến động tiền bạc
-            .filter(r => r.noDauKy || r.phatSinh || r.thanhToan || r.conNo)
+            .filter(r => r.noDauKy !== 0 || r.phatSinh !== 0 || r.thanhToan !== 0 || r.conNo !== 0)
             // Sắp xếp theo tên A-Z
             .sort((a, b) => a.tenNhaKhoa.localeCompare(b.tenNhaKhoa, "vi"))
             .map((r, i) => ({ ...r, stt: i + 1 }));

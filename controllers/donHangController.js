@@ -33,9 +33,9 @@ const generateMaDonHang = async () => {
 // [POST] Tạo đơn hàng mới
 exports.createDonHang = async (req, res) => {
     try {
-        const { nhaKhoa, bacSi, benhNhan } = req.body;
+        const { nhaKhoa, bacSi, benhNhan, danhSachSanPham } = req.body;
 
-        // Optional: Kiểm tra logic Bác sĩ và Bệnh nhân có thực sự thuộc Nha khoa này không
+        // Kiểm tra logic Bác sĩ và Bệnh nhân
         const checkBenhNhan = await BenhNhan.findOne({ _id: benhNhan, nhaKhoa: nhaKhoa });
         const checkBacSi = await NguoiLienHe.findOne({ _id: bacSi, nhaKhoa: nhaKhoa });
 
@@ -46,6 +46,28 @@ exports.createDonHang = async (req, res) => {
             return res.status(400).json({ success: false, message: "Bác sĩ không thuộc Nha khoa này" });
         }
 
+        const BangGia = require("../models/BangGia");
+        const SanPham = require("../models/SanPham");
+
+        if (danhSachSanPham && Array.isArray(danhSachSanPham)) {
+            for (let spItem of danhSachSanPham) {
+                // SỬA Ở ĐÂY: Dùng đúng 'nhaKhoaId' và 'sanPhamId' theo cấu trúc của BangGia.js
+                const giaRieng = await BangGia.findOne({
+                    nhaKhoaId: nhaKhoa,
+                    sanPhamId: spItem.sanPham
+                });
+
+                if (giaRieng) {
+                    // Nếu có giá riêng, lấy giá riêng
+                    spItem.donGia = giaRieng.donGia || giaRieng.gia || 0;
+                } else {
+                    // Nếu không có giá riêng, lấy giá chung
+                    const spGoc = await SanPham.findById(spItem.sanPham);
+                    spItem.donGia = spGoc?.donGiaChung || 0;
+                }
+            }
+        }
+
         // Sinh mã theo chuẩn: TAN + YY + MM + 4 số tăng dần trong tháng
         let maDonHang = await generateMaDonHang();
         let retry = 0;
@@ -54,6 +76,7 @@ exports.createDonHang = async (req, res) => {
             try {
                 const newDonHang = new DonHang({
                     ...req.body,
+                    danhSachSanPham, // Nạp danh sách sản phẩm đã được gán đơn giá cứng
                     maDonHang,
                     nhatKyChinhSua: [{
                         nguoiThuc: req.body.nguoiThucDuyet || "Điều Phối",
