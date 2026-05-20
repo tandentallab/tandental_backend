@@ -134,7 +134,7 @@ exports.createPhieuThu = async (req, res) => {
       if (!hd) continue;
 
       // Snapshot trước khi thay đổi
-      const giaTriHoaDon = hd.thanhTien || 0;
+      const giaTriHoaDon = hd.giaTriThanhToan || 0;
       const daTTruocLanNay = hd.daThanhToan || 0;
       const conLaiTruocLanNay = hd.conLai || 0;
 
@@ -261,7 +261,7 @@ exports.getPhieuThuById = async (req, res) => {
     const hoaDonPopulate = [
       { path: "nhaKhoa", select: "hoVaTen tenGiaoDich soDienThoai email moTa diaChiCuThe quanHuyen tinh quocGia" },
       {
-        path: "danhSachDonHang.donHang",
+        path: "danhSachSanPham.donHang",
         select: "bacSi benhNhan",
         populate: [
           { path: "bacSi", select: "hoVaTen" },
