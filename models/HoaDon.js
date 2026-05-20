@@ -57,6 +57,11 @@ const hoaDonSchema = new mongoose.Schema(
           type: Number,
           default: 0,
         },
+        loaiGiamGia: {
+          type: String,
+          enum: ['phanTram', 'tienMat'],
+          default: 'phanTram'
+        },
         tongCongSanPham: {
           type: Number,
           default: 0, // thanhTien - giamGia
