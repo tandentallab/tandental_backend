@@ -44,6 +44,11 @@ const donHangSchema = new mongoose.Schema(
                     ref: "SanPham",
                     required: true,
                 },
+                // 🔥 THÊM TRƯỜNG NÀY ĐỂ CHỐT CỨNG GIÁ TẠI THỜI ĐIỂM TẠO ĐƠN
+                donGia: {
+                    type: Number,
+                    default: 0,
+                },
                 viTri: [
                     {
                         kieu: {

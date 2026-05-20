@@ -6,79 +6,88 @@ const hoaDonSchema = new mongoose.Schema(
       type: String,
       unique: true,
     },
-
     nhaKhoa: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "NhaKhoa",
       required: true,
     },
 
-    danhSachDonHang: [
+    danhSachSanPham: [
       {
         donHang: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "DonHang",
           required: true,
         },
-
-        tongTien: Number,
-
-        chietKhau: {
+        sanPhamDonHangId: mongoose.Schema.Types.ObjectId, // _id subdoc trong DonHang
+        sanPham: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "SanPham",
+          required: true,
+        },
+        tenSanPham: { type: String, default: "" },
+        loaiDon: {
+          type: String,
+          enum: ["Mới", "Hàng sửa", "Hàng làm lại", "Hàng bảo hành"],
+          default: "Mới",
+        },
+        viTri: [
+          {
+            kieu: {
+              type: String,
+              enum: ["Rời", "Cầu"],
+            },
+            soRang: [Number],
+          },
+        ],
+        soLuong: {
+          type: Number,
+          required: true,
+          default: 1,
+        },
+        donGia: {
           type: Number,
           default: 0,
         },
-
-        loaiChietKhau: {
-          type: String,
-          enum: ["phanTram", "tienMat"],
-          default: "tienMat",
+        thanhTien: {
+          type: Number,
+          default: 0, // soLuong × donGia
         },
-
-        thanhTienSauCK: Number,
+        giamGia: {
+          type: Number,
+          default: 0,
+        },
+        tongCongSanPham: {
+          type: Number,
+          default: 0, // thanhTien - giamGia
+        },
+        ghiChu: {
+          type: String,
+          default: "",
+        },
       },
     ],
 
-    tongTien: Number,
+    /* ================= TỔNG HÓA ĐƠN ================= */
+    // tongCong        = Σ tongCongSanPham
+    // chietKhau       = số tiền chiết khấu (tính từ tongCong)
+    // thue            = (tongCong - chietKhau) × %  → lưu số tiền
+    // giaTriThanhToan = (tongCong - chietKhau) + thue + chiPhiKhac
+    // conLai          = giaTriThanhToan - daThanhToan
+    tongCong: { type: Number, default: 0 },
+    chietKhau: { type: Number, default: 0 },
+    thue: { type: Number, default: 0 },
+    chiPhiKhac: { type: Number, default: 0 },
+    giaTriThanhToan: { type: Number, default: 0 },
+    daThanhToan: { type: Number, default: 0 },
+    conLai: { type: Number, default: 0 },
 
-    tongChietKhau: Number,
-
-    thanhTien: Number,
-
-    ngayXuatHoaDon: {
-      type: Date,
-      default: Date.now,
-    },
-
-    daThanhToan: {
-      type: Number,
-      default: 0,
-    },
-
-    conLai: {
-      type: Number,
-      default: 0,
-    },
-
-    thue: {
-      type: Number,
-      default: 0,
-    },
-
-    chiPhiKhac: {
-      type: Number,
-      default: 0,
-    },
-
+    ngayXuatHoaDon: { type: Date, default: Date.now },
     trangThai: {
       type: String,
-      enum: [
-        "Chưa thanh toán",
-        "Thanh toán một phần",
-        "Đã thanh toán",
-      ],
+      enum: ["Chưa thanh toán", "Thanh toán một phần", "Đã thanh toán"],
       default: "Chưa thanh toán",
     },
-
     chinhSachThanhToan: {
       type: String,
       enum: [
@@ -93,78 +102,12 @@ const hoaDonSchema = new mongoose.Schema(
       ],
       default: "Thanh toán cuối tháng",
     },
-
-    ghiChuChoKhachHang: {
-      type: String,
-      default: "",
-    },
-
-    ghiChuNoiBo: {
-      type: String,
-      default: "",
-    },
+    ghiChuChoKhachHang: { type: String, default: "" },
+    ghiChuNoiBo: { type: String, default: "" },
   },
   {
     timestamps: true,
   }
 );
 
-
-/* ================= TỰ ĐỘNG TẠO SỐ HÓA ĐƠN ================= */
-
-const Counter = require("./Counter");
-
-hoaDonSchema.pre("save", async function () {
-  if (!this.isNew || this.soHoaDon) {
-    return;
-  }
-
-  const now = new Date();
-
-  // TAN + yy + mm
-  const yy = now.getFullYear().toString().slice(-2);
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const prefix = `TAN${yy}${mm}`;
-
-  const counterId = `${prefix}`;
-
-  const counter =
-    await Counter.findByIdAndUpdate(
-      counterId,
-      {
-        $inc: { seq: 1 },
-      },
-      {
-        new: true,
-        upsert: true,
-      }
-    );
-
-  const abcd = String(counter.seq).padStart(
-    4,
-    "0"
-  );
-
-  this.soHoaDon = `${counterId}${abcd}`;
-});
-
-/* ================= INDEX ================= */
-
-
-hoaDonSchema.index({
-  nhaKhoa: 1,
-  createdAt: -1,
-});
-
-hoaDonSchema.index({
-  trangThai: 1,
-});
-
-hoaDonSchema.index({
-  ngayXuatHoaDon: -1,
-});
-
-module.exports = mongoose.model(
-  "HoaDon",
-  hoaDonSchema
-);
+module.exports = mongoose.model("HoaDon", hoaDonSchema);

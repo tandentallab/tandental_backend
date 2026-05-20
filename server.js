@@ -38,6 +38,7 @@ const allowedOrigins = [
   "https://tan-dental-frontend-yzw6.vercel.app",
   "https://tandental.vercel.app",
   "http://127.0.0.1:3000",
+  "https://tan-dental.vercel.app",
   process.env.ADMIN_FRONTEND_URL,
   process.env.PUBLIC_FRONTEND_URL,
 ].filter(Boolean);
