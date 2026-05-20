@@ -146,7 +146,7 @@ exports.getAllPhieuBaoHanh = async (req, res) => {
     const phieus = await PhieuBaoHanh.find()
       .populate({
         path: "donHang",
-        select: "maDonHang ngayNhan",
+        select: "_id maDonHang ngayNhan",
       })
       .populate({
         path: "nhaKhoa",
