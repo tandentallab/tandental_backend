@@ -360,8 +360,30 @@ exports.getHoaDonById = async (req, res) => {
     if (!hoaDon) {
       return res.status(404).json({ success: false, message: "Không tìm thấy hóa đơn" });
     }
+    const congNoResult = await HoaDon.aggregate([
+      {
+        $match: {
+          nhaKhoa: hoaDon.nhaKhoa?._id || hoaDon.nhaKhoa,
+          conLai: { $gt: 0 },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          tongCongNo: { $sum: "$conLai" },
+        },
+      },
+    ]);
 
-    res.json({ success: true, data: hoaDon });
+    const congNoNhaKhoa = congNoResult[0]?.tongCongNo || 0;
+
+    res.json({
+      success: true,
+      data: {
+        ...hoaDon.toObject(),
+        congNoNhaKhoa,
+      },
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
