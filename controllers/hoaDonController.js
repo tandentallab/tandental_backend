@@ -3,6 +3,7 @@ const HoaDon = require("../models/HoaDon");
 const DonHang = require("../models/DonHang");
 const BangGia = require("../models/BangGia");
 const SanPham = require("../models/SanPham");
+const logActivity = require("../utils/activityLogger");
 
 const roundMoney = (n) => Math.round(Number(n || 0));
 
@@ -239,6 +240,29 @@ exports.createHoaDon = async (req, res) => {
         chinhSachThanhToan,
       }
     );
+
+        // ✅ LOG ACTIVITY ĐẶT TẠI ĐÂY
+    await logActivity({
+      req,
+
+      action: "CREATE",
+
+      module: "HOA_DON",
+
+      targetId: hoaDon._id,
+
+      targetName: hoaDon.soHoaDon,
+
+      description: `Tạo hóa đơn ${hoaDon.soHoaDon}`,
+
+      newData: {
+        soHoaDon: hoaDon.soHoaDon,
+        tongCong: hoaDon.tongCong,
+        giaTriThanhToan: hoaDon.giaTriThanhToan,
+        trangThai: hoaDon.trangThai,
+      },
+    });
+
 
     res.json({ success: true, data: hoaDon });
   } catch (err) {

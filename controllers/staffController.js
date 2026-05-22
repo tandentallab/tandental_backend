@@ -10,6 +10,7 @@ const generateToken = (staff) => {
     {
       id: staff._id,
       MSNV: staff.MSNV,
+      HoTenNV: staff.HoTenNV,
       Email: staff.Email,
       appRole,
     },

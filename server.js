@@ -27,6 +27,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const nhanVienRoutes = require("./routes/nhanVienRoutes");
 const bangLuongRoutes = require("./routes/bangLuongRoutes");
 const searchRoutes = require("./routes/searchRoutes");
+const activityLogRoutes = require("./routes/activityLogRoutes");
 
 
 const app = express();
@@ -99,6 +100,7 @@ const startServer = async () => {
       "/api/uploads",
       express.static(path.join(__dirname, "public/uploads"))
     );
+    app.use("/api/activity-logs", activityLogRoutes)
 
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
