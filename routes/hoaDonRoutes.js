@@ -28,6 +28,8 @@ router.get(
   hoaDonController.countDonHangChuaXuatHoaDonAll
 );
 
+router.get("/ngay-gan-nhat-all", hoaDonController.getNgayXuatHoaDonGanNhatAll);
+
 
 // Lấy danh sách hóa đơn theo nha khoa
 router.get("/nha-khoa/:nhaKhoaId", hoaDonController.getAllHoaDon);

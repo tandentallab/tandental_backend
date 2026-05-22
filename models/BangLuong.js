@@ -20,6 +20,8 @@ const bangLuongSchema = new mongoose.Schema(
 
     luongCanBan: Number,
 
+    ngayCongThang: Number,   
+
     luongMotNgay: Number,
 
     soNgayCong: {

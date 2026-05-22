@@ -1,9 +1,15 @@
 const NhanVien = require("../models/NhanVien");
+const fs = require("fs");
+const path = require("path");
 
-
-// Tạo nhân viên
+// ================= TẠO NHÂN VIÊN =================
 exports.createNhanVien = async (req, res) => {
   try {
+    // Ép kiểu ngayCongThang về số nếu có gửi lên, nếu không mongoose sẽ tự lấy mặc định (28)
+    if (req.body.ngayCongThang) {
+      req.body.ngayCongThang = Number(req.body.ngayCongThang);
+    }
+
     const nhanVien = await NhanVien.create(req.body);
 
     res.json({
@@ -18,8 +24,7 @@ exports.createNhanVien = async (req, res) => {
   }
 };
 
-
-// Lấy danh sách
+// ================= LẤY DANH SÁCH =================
 exports.getAllNhanVien = async (req, res) => {
   try {
     const data = await NhanVien.find().sort({
@@ -38,8 +43,7 @@ exports.getAllNhanVien = async (req, res) => {
   }
 };
 
-
-// Chi tiết
+// ================= CHI TIẾT NHÂN VIÊN =================
 exports.getNhanVienById = async (req, res) => {
   try {
     const data = await NhanVien.findById(req.params.id);
@@ -56,14 +60,18 @@ exports.getNhanVienById = async (req, res) => {
   }
 };
 
-
-// Cập nhật
+// ================= CẬP NHẬT NHÂN VIÊN =================
 exports.updateNhanVien = async (req, res) => {
   try {
+    // Bảo vệ dữ liệu: Ép kiểu sang Number nếu người dùng cập nhật số ngày công
+    if (req.body.ngayCongThang !== undefined) {
+      req.body.ngayCongThang = Number(req.body.ngayCongThang);
+    }
+
     const data = await NhanVien.findByIdAndUpdate(
       req.params.id,
       req.body,
-      { returnDocument: 'after' }
+      { returnDocument: 'after', runValidators: true } // runValidators giúp validate đúng schema (ví dụ: không được để trống)
     );
 
     res.json({
@@ -78,8 +86,7 @@ exports.updateNhanVien = async (req, res) => {
   }
 };
 
-
-// Xóa
+// ================= XÓA NHÂN VIÊN =================
 exports.deleteNhanVien = async (req, res) => {
   try {
     await NhanVien.findByIdAndDelete(req.params.id);
@@ -96,7 +103,7 @@ exports.deleteNhanVien = async (req, res) => {
   }
 };
 
-//UPLOAD CCCD
+// ================= UPLOAD CCCD =================
 exports.uploadCCCD = async (req, res) => {
   try {
     const { id } = req.params;
@@ -105,11 +112,12 @@ exports.uploadCCCD = async (req, res) => {
 
     if (!nhanVien) {
       return res.status(404).json({
+        success: false,
         message: "Không tìm thấy nhân viên",
       });
     }
 
-    // lấy danh sách file upload
+    // Lấy danh sách file upload
     const imageUrls = req.files.map(
       (file) => `/uploads/cccd/${file.filename}`
     );
@@ -128,21 +136,17 @@ exports.uploadCCCD = async (req, res) => {
     });
   } catch (err) {
     console.log(err);
-
     res.status(500).json({
+      success: false,
       message: err.message,
     });
   }
 };
 
-const fs = require("fs");
-const path = require("path");
-
 // ================= DELETE CCCD IMAGE =================
 exports.deleteCCCDImage = async (req, res) => {
   try {
     const { id } = req.params;
-
     const { imageUrl } = req.body;
 
     const nhanVien = await NhanVien.findById(id);
@@ -154,7 +158,7 @@ exports.deleteCCCDImage = async (req, res) => {
       });
     }
 
-    // kiểm tra ảnh tồn tại
+    // Kiểm tra ảnh tồn tại trong db
     if (!nhanVien.cccdImages.includes(imageUrl)) {
       return res.status(404).json({
         success: false,
@@ -162,14 +166,13 @@ exports.deleteCCCDImage = async (req, res) => {
       });
     }
 
-    // ================= XÓA FILE TRONG PUBLIC =================
+    // ================= XÓA FILE TRONG THƯ MỤC PUBLIC =================
     const filePath = path.join(
       __dirname,
       "../public",
       imageUrl.replace("/uploads", "uploads")
     );
 
-    // nếu file tồn tại thì xóa
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
@@ -188,7 +191,6 @@ exports.deleteCCCDImage = async (req, res) => {
     });
   } catch (err) {
     console.log(err);
-
     res.status(500).json({
       success: false,
       message: err.message,

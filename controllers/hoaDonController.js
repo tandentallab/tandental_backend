@@ -174,6 +174,70 @@ exports.countDonHangChuaXuatHoaDonAll = async (req, res) => {
   }
 };
 
+// ================= LẤY NGÀY XUẤT HÓA ĐƠN GẦN NHẤT CỦA TẤT CẢ NHA KHOA =================
+exports.getNgayXuatHoaDonGanNhatAll = async (req, res) => {
+  try {
+    const result = await HoaDon.aggregate([
+      // 1. Sắp xếp toàn bộ hóa đơn theo ngày xuất mới nhất trước
+      { $sort: { ngayXuatHoaDon: -1 } },
+      
+      // 2. Nhóm theo từng nha khoa và lấy hóa đơn đầu tiên (chính là hóa đơn mới nhất)
+      {
+        $group: {
+          _id: "$nhaKhoa",
+          hoaDonId: { $first: "$_id" },
+          soHoaDonGanNhat: { $first: "$soHoaDon" },
+          ngayXuatHoaDonGanNhat: { $first: "$ngayXuatHoaDon" },
+          giaTriThanhToan: { $first: "$giaTriThanhToan" },
+          trangThai: { $first: "$trangThai" },
+        },
+      },
+      
+      // 3. Lookup sang bảng NhaKhoa để lấy thông tin chi tiết của nha khoa đó
+      {
+        $lookup: {
+          from: "nhakhoas", // Tên collection của NhaKhoa trong compass/atlas (thường là viết thường + thêm "s")
+          localField: "_id",
+          foreignField: "_id",
+          as: "nhaKhoaInfo",
+        },
+      },
+      
+      // 4. Trải phẳng mảng nhaKhoaInfo vừa lookup được
+      { $unwind: "$nhaKhoaInfo" },
+      
+      // 5. Định dạng lại payload trả về cho đẹp và gọn gàng
+      {
+        $project: {
+          _id: 0,
+          nhaKhoaId: "$_id",
+          tenNhaKhoa: "$nhaKhoaInfo.tenNhaKhoa",
+          hoVaTen: "$nhaKhoaInfo.hoVaTen",
+          tinh: "$nhaKhoaInfo.tinh",
+          hoaDonGanNhat: {
+            _id: "$hoaDonId",
+            soHoaDon: "$soHoaDonGanNhat",
+            ngayXuatHoaDon: "$ngayXuatHoaDonGanNhat",
+            giaTriThanhToan: "$giaTriThanhToan",
+            trangThai: "$trangThai"
+          }
+        },
+      },
+      
+      // 6. Sắp xếp danh sách nha khoa theo thứ tự ai vừa được xuất hóa đơn gần đây nhất lên đầu
+      { $sort: { "hoaDonGanNhat.ngayXuatHoaDon": -1 } }
+    ]);
+
+    res.json({
+      success: true,
+      total: result.length,
+      data: result,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ================= TẠO HÓA ĐƠN =================
 exports.createHoaDon = async (req, res) => {
   try {

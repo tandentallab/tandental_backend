@@ -27,6 +27,12 @@ const nhanVienSchema = new mongoose.Schema(
       default: 0,
     },
 
+    ngayCongThang: {
+      type: Number,
+      required: true,
+      default: 28,
+    },
+
     trangThai: {
       type: String,
       enum: ["Đang làm", "Nghỉ việc"],
