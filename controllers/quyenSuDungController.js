@@ -91,7 +91,6 @@ exports.updateQuyenSuDung = async (req, res) => {
   try {
     const { id } = req.params;
     const { ten, moTa, permissions } = req.body;
-    console.log("UPDATE - req.body:", req.body);
 
     if (!ten) {
       return res.status(400).json({ message: "Tên quyền sử dụng là bắt buộc" });
