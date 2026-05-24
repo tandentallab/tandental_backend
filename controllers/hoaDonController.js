@@ -5,70 +5,105 @@ const BangGia = require("../models/BangGia");
 const SanPham = require("../models/SanPham");
 const logActivity = require("../utils/activityLogger");
 
+// ================= FINANCIAL HELPERS (CENTRALIZED) =================
 const roundMoney = (n) => Math.round(Number(n || 0));
 
-// tongCong - chietKhau = sauCK
-// thue = sauCK × %
-// giaTriThanhToan = sauCK + thue + chiPhiKhac
+// Tính giá trị thanh toán cuối cùng
 const calculateGiaTriThanhToan = ({ tongCong, chietKhau, thue, chiPhiKhac }) => {
-  const sauChietKhau = Number(tongCong || 0) - Number(chietKhau || 0);
+  const sauChietKhau = Math.max(0, Number(tongCong || 0) - Number(chietKhau || 0));
   const thueTien = sauChietKhau * (Number(thue || 0) / 100);
   return roundMoney(sauChietKhau + thueTien + Number(chiPhiKhac || 0));
 };
 
-const autoTrangThai = (hoaDon) => {
-  if (hoaDon.conLai <= 0) return "Đã thanh toán";
-  if (hoaDon.daThanhToan > 0) return "Thanh toán một phần";
+// Tính toán nợ còn lại an toàn (không bao giờ âm)
+const calculateConLai = (giaTriThanhToan, daThanhToan) => {
+  return Math.max(0, roundMoney(Number(giaTriThanhToan || 0) - Number(daThanhToan || 0)));
+};
+
+// Tự động nội suy trạng thái từ dòng tiền thay vì set cứng
+const autoTrangThai = (conLai, daThanhToan) => {
+  if (conLai <= 0) return "Đã thanh toán";
+  if (daThanhToan > 0) return "Thanh toán một phần";
   return "Chưa thanh toán";
 };
 
 
-
 // ================= BUILD DANH SACH SAN PHAM FLAT =================
-// Nhận vào danh sách donHangIds + nhaKhoaId
-// Trả về { danhSachSanPham (flat array), tongCong }
 async function buildDanhSachSanPham(donHangIds, nhaKhoaId, session = null) {
+  const findOptions = session ? { session } : {};
+
+  // 1. Fetch TẤT CẢ donHang trong 1 query duy nhất
+  const donHangs = await DonHang.find(
+    { _id: { $in: donHangIds } },
+    null,
+    findOptions
+  );
+
+  if (donHangs.length !== donHangIds.length) {
+    const foundIds = new Set(donHangs.map((d) => d._id.toString()));
+    const missing = donHangIds.find((id) => !foundIds.has(id.toString()));
+    throw new Error(`Không tìm thấy đơn hàng: ${missing}`);
+  }
+
+  // 2. Gom TẤT CẢ sanPhamIds từ mọi donHang (dedup)
+  const allSanPhamIds = [
+    ...new Set(
+      donHangs.flatMap((dh) => dh.danhSachSanPham.map((sp) => sp.sanPham.toString()))
+    ),
+  ];
+
+  // 3. Batch fetch SanPham + BangGia song song — chỉ 2 query tổng cộng
+  const [sanPhams, bangGias] = await Promise.all([
+    SanPham.find({ _id: { $in: allSanPhamIds } }, "tenSanPham donGiaChung", findOptions),
+    BangGia.find({ nhaKhoaId, sanPhamId: { $in: allSanPhamIds } }, null, findOptions),
+  ]);
+
+  const sanPhamMap = Object.fromEntries(sanPhams.map((sp) => [sp._id.toString(), sp]));
+  const bangGiaMap = Object.fromEntries(bangGias.map((bg) => [bg.sanPhamId.toString(), bg]));
+
+  // 4. Build snapshot — iterate theo thứ tự donHangIds gốc
+  const donHangById = Object.fromEntries(donHangs.map((dh) => [dh._id.toString(), dh]));
   const danhSachSanPham = [];
   let tongCong = 0;
 
   for (const donHangId of donHangIds) {
-    const query = DonHang.findById(donHangId);
-    if (session) query.session(session);
-    const donHang = await query;
-
-    if (!donHang) throw new Error(`Không tìm thấy đơn hàng: ${donHangId}`);
-
-    // Batch lấy tên sản phẩm
-    const sanPhamIds = donHang.danhSachSanPham.map((sp) => sp.sanPham);
-    const sanPhams = await SanPham.find({ _id: { $in: sanPhamIds } }).select("tenSanPham");
-    const sanPhamMap = {};
-    sanPhams.forEach((sp) => { sanPhamMap[sp._id.toString()] = sp; });
+    const donHang = donHangById[donHangId.toString()];
 
     for (const spItem of donHang.danhSachSanPham) {
-      // 🔥 THAY ĐỔI TẠI ĐÂY: Lấy thẳng đơn giá cứng từ Đơn Hàng, không gọi hàm getDonGia động nữa!
-      const donGia = Number(spItem.donGia || 0);
+      const sanPhamId = spItem.sanPham.toString();
+      const sanPham = sanPhamMap[sanPhamId];
+
+      if (!sanPham) {
+        throw new Error(`Không tìm thấy sản phẩm: ${sanPhamId}`);
+      }
+
+      // Snapshot giá realtime tại thời điểm tạo hóa đơn
+      const bangGia = bangGiaMap[sanPhamId];
+      const donGiaSnapshot = bangGia
+        ? Number(bangGia.donGia ?? bangGia.gia ?? 0)
+        : Number(sanPham.donGiaChung || 0);
 
       const soLuong = Number(spItem.soLuong || 1);
-      const thanhTien = donGia * soLuong;
+      const thanhTienSnapshot = donGiaSnapshot * soLuong;
       const giamGia = Math.max(0, Number(spItem.giamGia || 0));
 
-      if (giamGia > thanhTien) {
+      if (giamGia > thanhTienSnapshot) {
         throw new Error("Giảm giá vượt quá thành tiền sản phẩm");
       }
 
-      const tongCongSanPham = thanhTien - giamGia;
+      const tongCongSanPham = thanhTienSnapshot - giamGia;
       tongCong += tongCongSanPham;
 
       danhSachSanPham.push({
         donHang: donHang._id,
         sanPhamDonHangId: spItem._id,
         sanPham: spItem.sanPham,
-        tenSanPham: sanPhamMap[spItem.sanPham.toString()]?.tenSanPham || "",
+        tenSanPham: sanPham.tenSanPham || "",
         loaiDon: spItem.loaiDon || "Mới",
         viTri: spItem.viTri || [],
         soLuong,
-        donGia: roundMoney(donGia),
-        thanhTien: roundMoney(thanhTien),
+        donGiaSnapshot: roundMoney(donGiaSnapshot),
+        thanhTienSnapshot: roundMoney(thanhTienSnapshot),
         giamGia: roundMoney(giamGia),
         tongCongSanPham: roundMoney(tongCongSanPham),
         ghiChu: spItem.ghiChu || "",
@@ -76,7 +111,7 @@ async function buildDanhSachSanPham(donHangIds, nhaKhoaId, session = null) {
     }
   }
 
-  return { danhSachSanPham, tongCong };
+  return { danhSachSanPham, tongCong: roundMoney(tongCong) };
 }
 
 // ================= LẤY DANH SÁCH ĐƠN HÀNG CHƯA XUẤT HÓA ĐƠN =================
@@ -180,7 +215,7 @@ exports.getNgayXuatHoaDonGanNhatAll = async (req, res) => {
     const result = await HoaDon.aggregate([
       // 1. Sắp xếp toàn bộ hóa đơn theo ngày xuất mới nhất trước
       { $sort: { ngayXuatHoaDon: -1 } },
-      
+
       // 2. Nhóm theo từng nha khoa và lấy hóa đơn đầu tiên (chính là hóa đơn mới nhất)
       {
         $group: {
@@ -192,7 +227,7 @@ exports.getNgayXuatHoaDonGanNhatAll = async (req, res) => {
           trangThai: { $first: "$trangThai" },
         },
       },
-      
+
       // 3. Lookup sang bảng NhaKhoa để lấy thông tin chi tiết của nha khoa đó
       {
         $lookup: {
@@ -202,10 +237,10 @@ exports.getNgayXuatHoaDonGanNhatAll = async (req, res) => {
           as: "nhaKhoaInfo",
         },
       },
-      
+
       // 4. Trải phẳng mảng nhaKhoaInfo vừa lookup được
       { $unwind: "$nhaKhoaInfo" },
-      
+
       // 5. Định dạng lại payload trả về cho đẹp và gọn gàng
       {
         $project: {
@@ -223,7 +258,7 @@ exports.getNgayXuatHoaDonGanNhatAll = async (req, res) => {
           }
         },
       },
-      
+
       // 6. Sắp xếp danh sách nha khoa theo thứ tự ai vừa được xuất hóa đơn gần đây nhất lên đầu
       { $sort: { "hoaDonGanNhat.ngayXuatHoaDon": -1 } }
     ]);
@@ -240,85 +275,90 @@ exports.getNgayXuatHoaDonGanNhatAll = async (req, res) => {
 
 // ================= TẠO HÓA ĐƠN =================
 exports.createHoaDon = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
-    const {
-      nhaKhoaId,
-      danhSachDonHangIds,
-      chietKhau = 0,
-      thue = 0,
-      chiPhiKhac = 0,
-      ghiChuNoiBo = "",
-      ghiChuChoKhachHang = "",
-      chinhSachThanhToan = "Thanh toán cuối tháng",
-    } = req.body;
+    let hoaDon;
 
-    if (!danhSachDonHangIds || danhSachDonHangIds.length === 0) {
-      throw new Error("Danh sách đơn hàng trống");
-    }
-    if (Number(chietKhau) < 0) {
-      throw new Error("Chiết khấu không hợp lệ");
-    }
+    await session.withTransaction(async () => {
+      const {
+        nhaKhoaId,
+        danhSachDonHangIds,
+        chietKhau = 0,
+        thue = 0,
+        chiPhiKhac = 0,
+        ghiChuNoiBo = "",
+        ghiChuChoKhachHang = "",
+        chinhSachThanhToan = "Thanh toán cuối tháng",
+      } = req.body;
 
-    // 1. Đánh dấu các đơn hàng này là đã xuất hóa đơn
-    for (const donHangId of danhSachDonHangIds) {
-      await DonHang.updateOne(
-        { _id: donHangId, daXuatHoaDon: { $ne: true } },
-        { $set: { daXuatHoaDon: true } }
+      if (!nhaKhoaId) throw new Error("Thiếu nhaKhoaId");
+      if (!danhSachDonHangIds?.length) throw new Error("Danh sách đơn hàng trống");
+      if (Number(chietKhau) < 0) throw new Error("Chiết khấu không hợp lệ");
+
+      // 1. Đánh dấu đơn hàng trong 1 query, trong transaction
+      const updateResult = await DonHang.updateMany(
+        { _id: { $in: danhSachDonHangIds }, daXuatHoaDon: { $ne: true } },
+        { $set: { daXuatHoaDon: true } },
+        { session }
       );
-    }
 
-    // 2. Build dữ liệu sản phẩm
-    const { danhSachSanPham, tongCong } = await buildDanhSachSanPham(
-      danhSachDonHangIds,
-      nhaKhoaId
-    );
-
-    if (Number(chietKhau) > tongCong) {
-      throw new Error("Chiết khấu vượt quá tổng cộng hóa đơn");
-    }
-
-    // 3. Tính toán tiền nong
-    const giaTriThanhToan = calculateGiaTriThanhToan({ tongCong, chietKhau, thue, chiPhiKhac });
-
-    // 4. TẠO MÃ HÓA ĐƠN ĐỘC NHẤT (Sửa lỗi Duplicate Key null)
-    const newHoaDonId = new mongoose.Types.ObjectId();
-    const maSoHoaDon = "TAN" + newHoaDonId.toString().slice(-8).toUpperCase();
-
-    // 5. Lưu vào Database
-    const hoaDon = await HoaDon.create(
-      {
-        _id: newHoaDonId, // Gán ID đã tạo ở trên
-        soHoaDon: maSoHoaDon, // Gán mã hóa đơn
-        nhaKhoa: nhaKhoaId,
-        danhSachSanPham,
-        tongCong: roundMoney(tongCong),
-        chietKhau: roundMoney(chietKhau),
-        thue: Number(thue || 0),
-        chiPhiKhac: roundMoney(chiPhiKhac),
-        giaTriThanhToan,
-        daThanhToan: 0,
-        conLai: giaTriThanhToan,
-        trangThai: "Chưa thanh toán",
-        ghiChuNoiBo,
-        ghiChuChoKhachHang,
-        chinhSachThanhToan,
+      if (updateResult.modifiedCount !== danhSachDonHangIds.length) {
+        throw new Error("Một số đơn hàng đã được xuất hóa đơn trước đó");
       }
-    );
 
-        // ✅ LOG ACTIVITY ĐẶT TẠI ĐÂY
+      // 2. Build snapshot giá tại thời điểm tạo hóa đơn (trong transaction)
+      const { danhSachSanPham, tongCong } = await buildDanhSachSanPham(
+        danhSachDonHangIds,
+        nhaKhoaId,
+        session
+      );
+
+      if (Number(chietKhau) > tongCong) {
+        throw new Error("Chiết khấu vượt quá tổng cộng hóa đơn");
+      }
+
+      // 3. Tính toán tiền
+      const giaTriThanhToan = calculateGiaTriThanhToan({ tongCong, chietKhau, thue, chiPhiKhac });
+
+      // 4. Tạo mã hóa đơn
+      const newHoaDonId = new mongoose.Types.ObjectId();
+      const maSoHoaDon = "TAN" + newHoaDonId.toString().slice(-8).toUpperCase();
+
+      // 5. Lưu vào DB (trong transaction)
+      const [created] = await HoaDon.create(
+        [
+          {
+            _id: newHoaDonId,
+            soHoaDon: maSoHoaDon,
+            nhaKhoa: nhaKhoaId,
+            danhSachSanPham,
+            tongCong: roundMoney(tongCong),
+            chietKhau: roundMoney(chietKhau),
+            thue: Number(thue || 0),
+            chiPhiKhac: roundMoney(chiPhiKhac),
+            giaTriThanhToan,
+            daThanhToan: 0,
+            conLai: giaTriThanhToan,
+            trangThai: "Chưa thanh toán",
+            ghiChuNoiBo,
+            ghiChuChoKhachHang,
+            chinhSachThanhToan,
+          },
+        ],
+        { session }
+      );
+
+      hoaDon = created;
+    });
+
+    // Log ngoài transaction (non-critical, không rollback nếu log lỗi)
     await logActivity({
       req,
-
       action: "CREATE",
-
       module: "HOA_DON",
-
       targetId: hoaDon._id,
-
       targetName: hoaDon.soHoaDon,
-
       description: `Tạo hóa đơn ${hoaDon.soHoaDon}`,
-
       newData: {
         soHoaDon: hoaDon.soHoaDon,
         tongCong: hoaDon.tongCong,
@@ -327,11 +367,25 @@ exports.createHoaDon = async (req, res) => {
       },
     });
 
-
     res.json({ success: true, data: hoaDon });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    session.endSession();
   }
+};
+
+const buildTrangThaiQuery = (trangThai) => {
+  if (!trangThai) return undefined;
+
+  const list = trangThai
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (list.length === 0) return undefined;
+
+  return { $in: list };
 };
 
 // ================= LẤY TẤT CẢ HÓA ĐƠN (ADMIN) =================
@@ -344,7 +398,11 @@ exports.getAllHoaDonAdmin = async (req, res) => {
 
     let query = {};
 
-    if (trangThai) query.trangThai = trangThai;
+    const trangThaiQuery = buildTrangThaiQuery(trangThai);
+
+    if (trangThaiQuery) {
+      query.trangThai = trangThaiQuery;
+    }
 
     if (nhaKhoaId && mongoose.Types.ObjectId.isValid(nhaKhoaId)) {
       query.nhaKhoa = nhaKhoaId;
@@ -411,7 +469,11 @@ exports.getAllHoaDon = async (req, res) => {
 
     let query = { nhaKhoa: nhaKhoaId };
 
-    if (trangThai) query.trangThai = trangThai;
+    const trangThaiQuery = buildTrangThaiQuery(trangThai);
+
+    if (trangThaiQuery) {
+      query.trangThai = trangThaiQuery;
+    }
 
     if (search && search.match(/^[0-9a-fA-F]{24}$/)) {
       query.$or = [{ _id: search }];
@@ -479,119 +541,183 @@ exports.getHoaDonById = async (req, res) => {
 
 // ================= CẬP NHẬT HÓA ĐƠN =================
 exports.updateHoaDon = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
-    const { id } = req.params;
-    const {
-      danhSachDonHangIds,
-      danhSachSanPham: danhSachSanPhamMoi,
-      chietKhau,
-      thue,
-      chiPhiKhac,
-      ghiChuNoiBo,
-      ghiChuChoKhachHang,
-      chinhSachThanhToan,
-    } = req.body;
+    let updatedHoaDon;
 
-    const hoaDon = await HoaDon.findById(id);
-    if (!hoaDon) {
-      return res.status(404).json({ success: false, message: "Không tìm thấy hóa đơn" });
-    }
+    await session.withTransaction(async () => {
+      const { id } = req.params;
+      const {
+        danhSachDonHangIds,
+        danhSachSanPham: danhSachSanPhamMoi,
+        chietKhau,
+        thue,
+        chiPhiKhac,
+        ghiChuNoiBo,
+        ghiChuChoKhachHang,
+        chinhSachThanhToan,
+        ngayXuatHoaDon, // 🔥 BỔ SUNG TRƯỜNG NÀY
+      } = req.body;
 
-    // Cập nhật các field đơn giản
-    if (thue !== undefined) hoaDon.thue = Number(thue);
-    if (chiPhiKhac !== undefined) hoaDon.chiPhiKhac = Number(chiPhiKhac);
-    if (chietKhau !== undefined) hoaDon.chietKhau = Number(chietKhau);
-    if (ghiChuNoiBo !== undefined) hoaDon.ghiChuNoiBo = ghiChuNoiBo;
-    if (ghiChuChoKhachHang !== undefined) hoaDon.ghiChuChoKhachHang = ghiChuChoKhachHang;
-    if (chinhSachThanhToan !== undefined) hoaDon.chinhSachThanhToan = chinhSachThanhToan;
-
-    // Nếu FE gửi lại danh sách đơn hàng mới → rebuild toàn bộ
-    if (danhSachDonHangIds) {
-      const oldDonHangIds = [...new Set(hoaDon.danhSachSanPham.map((sp) => sp.donHang.toString()))];
-      const newDonHangIds = danhSachDonHangIds.map((id) => id.toString());
-
-      const removedIds = oldDonHangIds.filter((id) => !newDonHangIds.includes(id));
-      if (removedIds.length > 0) {
-        await DonHang.updateMany({ _id: { $in: removedIds } }, { $set: { daXuatHoaDon: false } });
+      const hoaDon = await HoaDon.findById(id).session(session);
+      if (!hoaDon) {
+        throw new Error("Không tìm thấy hóa đơn");
       }
-      await DonHang.updateMany({ _id: { $in: newDonHangIds } }, { $set: { daXuatHoaDon: true } });
 
-      const { danhSachSanPham, tongCong } = await buildDanhSachSanPham(
-        newDonHangIds,
-        hoaDon.nhaKhoa
-      );
+      const isPaid = hoaDon.daThanhToan > 0;
 
-      hoaDon.danhSachSanPham = danhSachSanPham;
-      hoaDon.tongCong = roundMoney(tongCong);
+      // 1. NGĂN CHẶN SỬA ĐỔI DỮ LIỆU TÀI CHÍNH/THỜI GIAN NẾU ĐÃ CÓ THANH TOÁN
+      let isFinancialUpdate = false;
+      if (danhSachDonHangIds) isFinancialUpdate = true;
+      if (danhSachSanPhamMoi && danhSachSanPhamMoi.length > 0) isFinancialUpdate = true;
+      if (chietKhau !== undefined && Number(chietKhau) !== hoaDon.chietKhau) isFinancialUpdate = true;
+      if (thue !== undefined && Number(thue) !== hoaDon.thue) isFinancialUpdate = true;
+      if (chiPhiKhac !== undefined && Number(chiPhiKhac) !== hoaDon.chiPhiKhac) isFinancialUpdate = true;
 
-      // Nếu FE gửi danhSachSanPham để cập nhật giảm giá / ghi chú từng sản phẩm
-    } else if (danhSachSanPhamMoi?.length) {
-      danhSachSanPhamMoi.forEach((spMoi) => {
-        // Match theo sanPhamDonHangId nếu có, fallback theo donHang + sanPham
-        const sp = hoaDon.danhSachSanPham.find((s) =>
-          spMoi.sanPhamDonHangId
-            ? s.sanPhamDonHangId?.toString() === spMoi.sanPhamDonHangId.toString()
-            : s.donHang.toString() === spMoi.donHang?.toString() &&
-            s.sanPham.toString() === spMoi.sanPham?.toString()
-        );
+      // Check nếu cố tình đổi ngày xuất hóa đơn
+      if (ngayXuatHoaDon) {
+        const oldDate = new Date(hoaDon.ngayXuatHoaDon).setHours(0, 0, 0, 0);
+        const newDate = new Date(ngayXuatHoaDon).setHours(0, 0, 0, 0);
+        if (oldDate !== newDate) isFinancialUpdate = true;
+      }
 
-        if (!sp) return;
+      if (isPaid && isFinancialUpdate) {
+        throw new Error("Hóa đơn đã có giao dịch thanh toán, chỉ được phép sửa ghi chú và chính sách thanh toán.");
+      }
 
-        if (spMoi.giamGia !== undefined) sp.giamGia = Number(spMoi.giamGia);
-        if (spMoi.loaiGiamGia !== undefined) sp.loaiGiamGia = spMoi.loaiGiamGia;
-        if (spMoi.tongCongSanPham !== undefined) sp.tongCongSanPham = Number(spMoi.tongCongSanPham);
-        if (spMoi.ghiChu !== undefined) sp.ghiChu = spMoi.ghiChu;
-      });
+      // 2. LUÔN CHO PHÉP CẬP NHẬT CÁC TRƯỜNG TEXT/META
+      if (ghiChuNoiBo !== undefined) hoaDon.ghiChuNoiBo = ghiChuNoiBo;
+      if (ghiChuChoKhachHang !== undefined) hoaDon.ghiChuChoKhachHang = ghiChuChoKhachHang;
+      if (chinhSachThanhToan !== undefined) hoaDon.chinhSachThanhToan = chinhSachThanhToan;
 
-      // Tính lại tongCong từ tongCongSanPham các sản phẩm
-      hoaDon.tongCong = roundMoney(
-        hoaDon.danhSachSanPham.reduce((s, sp) => s + (sp.tongCongSanPham || 0), 0)
-      );
-    }
+      // 3. XỬ LÝ UPDATE TÀI CHÍNH & THỜI GIAN (CHỈ KHI CHƯA THANH TOÁN)
+      if (!isPaid) {
+        if (chietKhau !== undefined && Number(chietKhau) < 0) throw new Error("Chiết khấu không hợp lệ");
+        if (thue !== undefined && Number(thue) < 0) throw new Error("Thuế không hợp lệ");
+        if (chiPhiKhac !== undefined && Number(chiPhiKhac) < 0) throw new Error("Chi phí khác không hợp lệ");
 
-    hoaDon.giaTriThanhToan = calculateGiaTriThanhToan({
-      tongCong: hoaDon.tongCong,
-      chietKhau: hoaDon.chietKhau,
-      thue: hoaDon.thue,
-      chiPhiKhac: hoaDon.chiPhiKhac,
+        if (thue !== undefined) hoaDon.thue = Number(thue);
+        if (chiPhiKhac !== undefined) hoaDon.chiPhiKhac = Number(chiPhiKhac);
+        if (chietKhau !== undefined) hoaDon.chietKhau = Number(chietKhau);
+
+        // 🔥 Cập nhật ngày xuất hóa đơn an toàn
+        if (ngayXuatHoaDon) {
+          hoaDon.ngayXuatHoaDon = new Date(ngayXuatHoaDon);
+        }
+
+        // TH1: FE gửi danh sách đơn hàng mới -> Rebuild toàn bộ
+        if (danhSachDonHangIds) {
+          const oldDonHangIds = [...new Set(hoaDon.danhSachSanPham.map((sp) => sp.donHang.toString()))];
+          const newDonHangIds = danhSachDonHangIds.map((id) => id.toString());
+
+          const removedIds = oldDonHangIds.filter((id) => !newDonHangIds.includes(id));
+          if (removedIds.length > 0) {
+            await DonHang.updateMany({ _id: { $in: removedIds } }, { $set: { daXuatHoaDon: false } }, { session });
+          }
+          await DonHang.updateMany({ _id: { $in: newDonHangIds } }, { $set: { daXuatHoaDon: true } }, { session });
+
+          const { danhSachSanPham, tongCong } = await buildDanhSachSanPham(newDonHangIds, hoaDon.nhaKhoa, session);
+          hoaDon.danhSachSanPham = danhSachSanPham;
+          hoaDon.tongCong = roundMoney(tongCong);
+        }
+        // TH2: FE gửi danhSachSanPham để update giảm giá / ghi chú từng SP
+        else if (danhSachSanPhamMoi?.length) {
+          danhSachSanPhamMoi.forEach((spMoi) => {
+            const sp = hoaDon.danhSachSanPham.find((s) =>
+              spMoi.sanPhamDonHangId
+                ? s.sanPhamDonHangId?.toString() === spMoi.sanPhamDonHangId.toString()
+                : s.donHang.toString() === spMoi.donHang?.toString() &&
+                s.sanPham.toString() === spMoi.sanPham?.toString()
+            );
+
+            if (!sp) return;
+
+            if (spMoi.giamGia !== undefined) {
+              const giamGiaTien = Math.max(0, Number(spMoi.giamGia));
+              if (giamGiaTien > sp.thanhTienSnapshot) {
+                throw new Error(`Giảm giá vượt quá thành tiền của sản phẩm: ${sp.tenSanPham}`);
+              }
+              sp.giamGia = roundMoney(giamGiaTien);
+              sp.tongCongSanPham = roundMoney(sp.thanhTienSnapshot - sp.giamGia);
+            }
+
+            if (spMoi.loaiGiamGia !== undefined) sp.loaiGiamGia = spMoi.loaiGiamGia;
+            if (spMoi.ghiChu !== undefined) sp.ghiChu = spMoi.ghiChu;
+          });
+
+          hoaDon.tongCong = roundMoney(
+            hoaDon.danhSachSanPham.reduce((s, sp) => s + (sp.tongCongSanPham || 0), 0)
+          );
+        }
+
+        // 4. KIỂM TRA TÍNH TOÀN VẸN
+        if (hoaDon.chietKhau > hoaDon.tongCong) throw new Error("Chiết khấu vượt quá tổng cộng hóa đơn");
+        if (hoaDon.tongCong < 0) throw new Error("Tổng cộng hóa đơn không được âm");
+
+        hoaDon.giaTriThanhToan = calculateGiaTriThanhToan({
+          tongCong: hoaDon.tongCong,
+          chietKhau: hoaDon.chietKhau,
+          thue: hoaDon.thue,
+          chiPhiKhac: hoaDon.chiPhiKhac,
+        });
+
+        if (hoaDon.giaTriThanhToan < 0) throw new Error("Giá trị thanh toán cuối cùng không được âm");
+
+        hoaDon.conLai = calculateConLai(hoaDon.giaTriThanhToan, hoaDon.daThanhToan);
+        hoaDon.trangThai = autoTrangThai(hoaDon.conLai, hoaDon.daThanhToan);
+      }
+
+      await hoaDon.save({ session });
+      updatedHoaDon = hoaDon;
     });
 
-    hoaDon.conLai = Math.max(0, roundMoney(hoaDon.giaTriThanhToan - hoaDon.daThanhToan));
-    hoaDon.trangThai = autoTrangThai(hoaDon);
+    res.json({ success: true, message: "Cập nhật hóa đơn thành công", data: updatedHoaDon });
 
-    const updated = await hoaDon.save();
-    res.json({ success: true, message: "Cập nhật hóa đơn thành công", data: updated });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    session.endSession();
   }
 };
 // ================= THANH TOÁN HÓA ĐƠN =================
 exports.thanhToanHoaDon = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
-    const { id } = req.params;
-    const { soTienThanhToan } = req.body;
+    let updatedHoaDon;
 
-    if (!soTienThanhToan || soTienThanhToan <= 0) {
-      return res.status(400).json({ success: false, message: "Số tiền thanh toán không hợp lệ" });
-    }
+    await session.withTransaction(async () => {
+      const { id } = req.params;
+      const { soTienThanhToan } = req.body;
+      const tienThanhToan = Number(soTienThanhToan);
 
-    const hoaDon = await HoaDon.findById(id);
-    if (!hoaDon) {
-      return res.status(404).json({ success: false, message: "Không tìm thấy hóa đơn" });
-    }
+      if (isNaN(tienThanhToan) || tienThanhToan <= 0) {
+        throw new Error("Số tiền thanh toán không hợp lệ");
+      }
 
-    if (soTienThanhToan > hoaDon.conLai) {
-      return res.status(400).json({ success: false, message: "Số tiền vượt quá số tiền còn lại" });
-    }
+      // Query kèm session để lock document trong transaction, chống Race condition 
+      const hoaDon = await HoaDon.findById(id).session(session);
+      if (!hoaDon) {
+        throw new Error("Không tìm thấy hóa đơn");
+      }
 
-    hoaDon.daThanhToan += Number(soTienThanhToan);
-    hoaDon.conLai = Math.max(0, roundMoney(hoaDon.giaTriThanhToan - hoaDon.daThanhToan));
-    hoaDon.trangThai = autoTrangThai(hoaDon);
+      if (tienThanhToan > hoaDon.conLai) {
+        throw new Error(`Số tiền thanh toán (${tienThanhToan}) vượt quá nợ còn lại (${hoaDon.conLai})`);
+      }
 
-    await hoaDon.save();
-    res.json({ success: true, message: "Thanh toán thành công", data: hoaDon });
+      // Tính toán an toàn
+      hoaDon.daThanhToan = roundMoney(hoaDon.daThanhToan + tienThanhToan);
+      hoaDon.conLai = calculateConLai(hoaDon.giaTriThanhToan, hoaDon.daThanhToan);
+      hoaDon.trangThai = autoTrangThai(hoaDon.conLai, hoaDon.daThanhToan);
+
+      await hoaDon.save({ session });
+      updatedHoaDon = hoaDon;
+    });
+
+    res.json({ success: true, message: "Thanh toán thành công", data: updatedHoaDon });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    session.endSession();
   }
 };
 
@@ -599,17 +725,20 @@ exports.thanhToanHoaDon = async (req, res) => {
 exports.deleteHoaDon = async (req, res) => {
   const session = await mongoose.startSession();
   try {
+    let successMessage = "";
+
     await session.withTransaction(async () => {
       const { id } = req.params;
 
       const hoaDon = await HoaDon.findById(id).session(session);
       if (!hoaDon) throw new Error("Không tìm thấy hóa đơn");
 
-      if (hoaDon.trangThai === "Thanh toán một phần") {
-        throw new Error("Không thể xóa hóa đơn đã thanh toán một phần");
+      // Chặn xóa dựa trên số tiền thay vì dựa trên chuỗi trạng thái (Tránh lỗi nếu đổi tên trạng thái sau này)
+      if (hoaDon.daThanhToan > 0) {
+        throw new Error("Không thể xóa hóa đơn đã có giao dịch thanh toán");
       }
 
-      // Rollback danh sách đơn hàng (lấy distinct)
+      // Rollback trạng thái đơn hàng: Chuyển daXuatHoaDon về false (chờ xuất)
       const donHangIds = [...new Set(hoaDon.danhSachSanPham.map((sp) => sp.donHang.toString()))];
       await DonHang.updateMany(
         { _id: { $in: donHangIds } },
@@ -617,10 +746,14 @@ exports.deleteHoaDon = async (req, res) => {
         { session }
       );
 
+      // Xóa cứng
       await HoaDon.findByIdAndDelete(id, { session });
 
-      res.json({ success: true, message: "Xóa hóa đơn thành công" });
+      successMessage = "Xóa hóa đơn và rollback trạng thái thành công";
     });
+
+    res.json({ success: true, message: successMessage });
+
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   } finally {
