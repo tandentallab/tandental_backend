@@ -102,8 +102,8 @@ async function buildDanhSachSanPham(donHangIds, nhaKhoaId, session = null) {
         loaiDon: spItem.loaiDon || "Mới",
         viTri: spItem.viTri || [],
         soLuong,
-        donGiaSnapshot: roundMoney(donGiaSnapshot),
-        thanhTienSnapshot: roundMoney(thanhTienSnapshot),
+        donGia: roundMoney(donGiaSnapshot),
+        thanhTien: roundMoney(thanhTienSnapshot),
         giamGia: roundMoney(giamGia),
         tongCongSanPham: roundMoney(tongCongSanPham),
         ghiChu: spItem.ghiChu || "",
@@ -634,11 +634,11 @@ exports.updateHoaDon = async (req, res) => {
 
             if (spMoi.giamGia !== undefined) {
               const giamGiaTien = Math.max(0, Number(spMoi.giamGia));
-              if (giamGiaTien > sp.thanhTienSnapshot) {
+              if (giamGiaTien > sp.thanhTien) { // Sửa thành sp.thanhTien
                 throw new Error(`Giảm giá vượt quá thành tiền của sản phẩm: ${sp.tenSanPham}`);
               }
               sp.giamGia = roundMoney(giamGiaTien);
-              sp.tongCongSanPham = roundMoney(sp.thanhTienSnapshot - sp.giamGia);
+              sp.tongCongSanPham = roundMoney(sp.thanhTien - sp.giamGia); // Sửa thành sp.thanhTien
             }
 
             if (spMoi.loaiGiamGia !== undefined) sp.loaiGiamGia = spMoi.loaiGiamGia;
