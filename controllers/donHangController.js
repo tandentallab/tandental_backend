@@ -46,27 +46,6 @@ exports.createDonHang = async (req, res) => {
             return res.status(400).json({ success: false, message: "Bác sĩ không thuộc Nha khoa này" });
         }
 
-        const BangGia = require("../models/BangGia");
-        const SanPham = require("../models/SanPham");
-
-        if (danhSachSanPham && Array.isArray(danhSachSanPham)) {
-            for (let spItem of danhSachSanPham) {
-                // SỬA Ở ĐÂY: Dùng đúng 'nhaKhoaId' và 'sanPhamId' theo cấu trúc của BangGia.js
-                const giaRieng = await BangGia.findOne({
-                    nhaKhoaId: nhaKhoa,
-                    sanPhamId: spItem.sanPham
-                });
-
-                if (giaRieng) {
-                    // Nếu có giá riêng, lấy giá riêng
-                    spItem.donGia = giaRieng.donGia || giaRieng.gia || 0;
-                } else {
-                    // Nếu không có giá riêng, lấy giá chung
-                    const spGoc = await SanPham.findById(spItem.sanPham);
-                    spItem.donGia = spGoc?.donGiaChung || 0;
-                }
-            }
-        }
 
         // Sinh mã theo chuẩn: TAN + YY + MM + 4 số tăng dần trong tháng
         let maDonHang = await generateMaDonHang();
@@ -76,7 +55,7 @@ exports.createDonHang = async (req, res) => {
             try {
                 const newDonHang = new DonHang({
                     ...req.body,
-                    danhSachSanPham, // Nạp danh sách sản phẩm đã được gán đơn giá cứng
+                    danhSachSanPham, // Chỉ lưu thông tin sản xuất, chưa snapshot giá
                     maDonHang,
                     nhatKyChinhSua: [{
                         nguoiThuc: req.body.nguoiThucDuyet || "Điều Phối",
