@@ -35,7 +35,7 @@ exports.restoreQuyenSuDung = async (req, res) => {
 };
 exports.createQuyenSuDung = async (req, res) => {
   try {
-    const { ten, moTa } = req.body;
+    const { ten, moTa, permissions } = req.body;
 
     if (!ten) {
       return res.status(400).json({ message: "Tên quyền sử dụng là bắt buộc" });
@@ -46,7 +46,7 @@ exports.createQuyenSuDung = async (req, res) => {
       return res.status(400).json({ message: "Quyền sử dụng này đã tồn tại" });
     }
 
-    const quyenSuDung = new QuyenSuDung({ ten, moTa });
+    const quyenSuDung = new QuyenSuDung({ ten, moTa, permissions: permissions || [] });
     await quyenSuDung.save();
 
     res.status(201).json({
@@ -90,7 +90,7 @@ exports.getQuyenSuDungById = async (req, res) => {
 exports.updateQuyenSuDung = async (req, res) => {
   try {
     const { id } = req.params;
-    const { ten, moTa } = req.body;
+    const { ten, moTa, permissions } = req.body;
 
     if (!ten) {
       return res.status(400).json({ message: "Tên quyền sử dụng là bắt buộc" });
@@ -105,9 +105,14 @@ exports.updateQuyenSuDung = async (req, res) => {
       return res.status(400).json({ message: "Tên quyền sử dụng này đã tồn tại" });
     }
 
+    const updateData = { ten, moTa };
+    if (permissions !== undefined) {
+      updateData.permissions = permissions;
+    }
+
     const quyen = await QuyenSuDung.findByIdAndUpdate(
       id,
-      { ten, moTa },
+      updateData,
       { returnDocument: 'after', runValidators: true }
     );
 

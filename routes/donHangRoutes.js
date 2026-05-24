@@ -15,6 +15,6 @@ router.get("/", verifyToken, allowAllBusinessRoles, donHangController.getAllDonH
 router.get("/:id", verifyToken, allowAllBusinessRoles, donHangController.getDonHangById);
 router.put("/:id", verifyToken, allowAllBusinessRoles, donHangController.updateDonHang);
 router.patch("/:id/congdoan-status", verifyToken, allowAllBusinessRoles, donHangController.updateCongDoanStatus);
-router.delete("/:id", verifyToken, allowAllBusinessRoles, donHangController.deleteDonHang);
+router.delete("/:id", verifyToken, authorizeRoles(APP_ROLES.ADMIN), donHangController.deleteDonHang);
 
 module.exports = router;

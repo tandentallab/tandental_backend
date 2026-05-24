@@ -71,6 +71,7 @@ exports.getAllPhieuThu = async (req, res) => {
               as: "item",
               in: {
                 soTienThanhToan: "$$item.soTienThanhToan",
+                daTTruocLanNay: "$$item.daTTruocLanNay",
                 hoaDon: {
                   $arrayElemAt: [
                     {
