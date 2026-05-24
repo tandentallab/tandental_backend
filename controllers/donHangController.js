@@ -35,15 +35,11 @@ exports.createDonHang = async (req, res) => {
     try {
         const { nhaKhoa, bacSi, benhNhan, danhSachSanPham } = req.body;
 
-        // Kiểm tra logic Bác sĩ và Bệnh nhân
+        // Kiểm tra logic Bệnh nhân
         const checkBenhNhan = await BenhNhan.findOne({ _id: benhNhan, nhaKhoa: nhaKhoa });
-        const checkBacSi = await NguoiLienHe.findOne({ _id: bacSi, nhaKhoa: nhaKhoa });
 
         if (!checkBenhNhan) {
             return res.status(400).json({ success: false, message: "Bệnh nhân không thuộc Nha khoa này" });
-        }
-        if (!checkBacSi) {
-            return res.status(400).json({ success: false, message: "Bác sĩ không thuộc Nha khoa này" });
         }
 
 
