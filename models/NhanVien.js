@@ -44,8 +44,14 @@ const nhanVienSchema = new mongoose.Schema(
         type: String,
       },
     ],
-  },
-  { timestamps: true }
+
+    // Thêm thuộc tính ngày tạo ở đây
+    ngayTao: {
+      type: Date,
+      default: Date.now, // Tự động lấy thời gian hiện tại khi tạo bản ghi
+    },
+  }
+  // Bạn có thể bỏ { timestamps: true } đi nếu không cần dùng đến thuộc tính updatedAt mặc định của Mongoose
 );
 
 module.exports = mongoose.model("NhanVien", nhanVienSchema);
