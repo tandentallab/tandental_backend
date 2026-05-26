@@ -216,6 +216,21 @@ exports.updateDonHang = async (req, res) => {
     try {
         const { nhatKyLogEntry, nhatKyChinhSua: _nhatKy, nguoiThucDuyet: _nguoi, ...updateData } = req.body;
 
+        // 🔥 ================= CHỐT CHẶN BẢO VỆ NGÀY NHẬN ================= 🔥
+        // Lấy đơn hàng hiện tại lên check thử, nếu có đổi ngayNhan và đã xuất HĐ thì chặn lại
+        if (updateData.ngayNhan) {
+            const donHangHienTai = await DonHang.findById(req.params.id);
+            if (donHangHienTai && donHangHienTai.daXuatHoaDon) {
+                const oldDate = new Date(donHangHienTai.ngayNhan).getTime();
+                const newDate = new Date(updateData.ngayNhan).getTime();
+                if (oldDate !== newDate) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Đơn hàng này đã được xuất hóa đơn, hệ thống đã đóng băng không cho phép sửa ngày nhận!"
+                    });
+                }
+            }
+        }
         const updateOp = { $set: updateData };
         if (nhatKyLogEntry) {
             updateOp.$push = {

@@ -170,117 +170,159 @@ exports.getDoanhThuThang = async (req, res) => {
             .endOf("month")
             .toDate();
 
-        // ── 1. HoaDon ────────────────────────────────────────────────────────
-        const [hdFacet] = await HoaDon.aggregate([
+        // ── 1. AGGREGATE HÓA ĐƠN: Tính Phát Sinh Thuần & Chốt Nợ Khởi Tạo ──
+        const hdStats = await HoaDon.aggregate([
+            { $sort: { createdAt: 1 } }, // Cũ nhất lên đầu để lấy firstNoDauKy
             {
-                $facet: {
-                    trongThang: [
-                        { $match: { ngayXuatHoaDon: { $gte: startOfMonth, $lte: endOfMonth } } },
-                        { $group: { _id: "$nhaKhoa", phatSinh: { $sum: "$giaTriThanhToan" } } },
-                    ],
-                    truocThang: [
-                        { $match: { ngayXuatHoaDon: { $lt: startOfMonth } } },
-                        { $group: { _id: "$nhaKhoa", tong: { $sum: "$giaTriThanhToan" } } },
-                    ],
-                },
-            },
+                $group: {
+                    _id: "$nhaKhoa",
+                    // Nợ gốc khởi tạo hệ thống vĩnh viễn nằm ở Hóa đơn đầu tiên
+                    tongSoDuMigrate: { $sum: "$soDuMigrate" },
+
+                    phatSinhTruoc: {
+                        $sum: {
+                            $cond: [
+                                { $lt: ["$ngayXuatHoaDon", startOfMonth] },
+                                {
+                                    $add: [
+                                        { $subtract: ["$tongCong", "$chietKhau"] },
+                                        { $multiply: [{ $subtract: ["$tongCong", "$chietKhau"] }, { $divide: ["$thue", 100] }] },
+                                        "$chiPhiKhac"
+                                    ]
+                                },
+                                0
+                            ]
+                        }
+                    },
+                    phatSinhTrong: {
+                        $sum: {
+                            $cond: [
+                                { $and: [{ $gte: ["$ngayXuatHoaDon", startOfMonth] }, { $lte: ["$ngayXuatHoaDon", endOfMonth] }] },
+                                {
+                                    $add: [
+                                        { $subtract: ["$tongCong", "$chietKhau"] },
+                                        { $multiply: [{ $subtract: ["$tongCong", "$chietKhau"] }, { $divide: ["$thue", 100] }] },
+                                        "$chiPhiKhac"
+                                    ]
+                                },
+                                0
+                            ]
+                        }
+                    }
+                }
+            }
         ]);
 
-        // ── 2. PhieuThu ──────────────────────────────────────────────────────
-        const [ptFacet] = await PhieuThu.aggregate([
-            { $unwind: "$danhSachHoaDon" },
+        // ── 2. AGGREGATE PHIẾU THU: Dòng tiền thực tế khách đã nộp ──
+        const ptStats = await PhieuThu.aggregate([
+            // Tìm nhaKhoa thông qua hóa đơn đầu tiên trong danh sách của phiếu thu
             {
                 $lookup: {
                     from: "hoadons",
                     localField: "danhSachHoaDon.hoaDon",
                     foreignField: "_id",
-                    as: "hd",
-                },
+                    as: "hdList"
+                }
             },
-            { $unwind: "$hd" },
+            { $unwind: { path: "$hdList", preserveNullAndEmptyArrays: true } },
+            // Group lại theo _id Phiếu Thu để không bị nhân đôi soTienThu nếu phiếu trả cho nhiều bill
             {
-                $facet: {
-                    trongThang: [
-                        { $match: { ngayThu: { $gte: startOfMonth, $lte: endOfMonth } } },
-                        { $group: { _id: "$hd.nhaKhoa", thanhToan: { $sum: "$danhSachHoaDon.soTienThanhToan" } } },
-                    ],
-                    truocThang: [
-                        { $match: { ngayThu: { $lt: startOfMonth } } },
-                        { $group: { _id: "$hd.nhaKhoa", tong: { $sum: "$danhSachHoaDon.soTienThanhToan" } } },
-                    ],
-                },
+                $group: {
+                    _id: "$_id",
+                    nhaKhoa: { $first: "$hdList.nhaKhoa" },
+                    ngayThu: { $first: "$ngayThu" },
+                    soTienThu: { $first: "$soTienThu" } // Lấy tổng tiền nộp thực tế
+                }
             },
+            { $match: { nhaKhoa: { $ne: null } } },
+            // Group theo Nha Khoa để cộng dồn tiền
+            {
+                $group: {
+                    _id: "$nhaKhoa",
+                    thanhToanTruoc: {
+                        $sum: { $cond: [{ $lt: ["$ngayThu", startOfMonth] }, "$soTienThu", 0] }
+                    },
+                    thanhToanTrong: {
+                        $sum: {
+                            $cond: [
+                                { $and: [{ $gte: ["$ngayThu", startOfMonth] }, { $lte: ["$ngayThu", endOfMonth] }] },
+                                "$soTienThu", 0
+                            ]
+                        }
+                    }
+                }
+            }
         ]);
 
-        // ── 3. Map tra cứu nhanh ─────────────────────────────────────────────
-        const toMap = (arr) =>
-            arr.reduce((m, x) => { m[x._id?.toString()] = x; return m; }, {});
+        // ── 3. LẤY DANH SÁCH NHA KHOA ĐỂ MAP DATA ──
+        const nhaKhoaList = await NhaKhoa.find({}, "tenGiaoDich hoVaTen soDuDauKy").lean();
 
-        const hdTrong = toMap(hdFacet.trongThang);
-        const hdTruoc = toMap(hdFacet.truocThang);
-        const ptTrong = toMap(ptFacet.trongThang);
-        const ptTruoc = toMap(ptFacet.truocThang);
+        const hdMap = hdStats.reduce((m, x) => { m[x._id.toString()] = x; return m; }, {});
+        const ptMap = ptStats.reduce((m, x) => { m[x._id.toString()] = x; return m; }, {});
 
-        // ── 4. Gộp allIds từ hóa đơn + phiếu thu ───────────────────────────
-        const allIds = new Set([
-            ...hdFacet.trongThang, ...hdFacet.truocThang,
-            ...ptFacet.trongThang, ...ptFacet.truocThang,
-        ].map(x => x._id?.toString()).filter(Boolean));
-
-        // ── 4b. Thêm nha khoa có soDuDauKy tháng này (dù chưa có hóa đơn) ──
-        const nhaKhoaSoDu = await NhaKhoa.find(
-            { "soDuDauKy.thang": thang, "soDuDauKy.nam": nam, "soDuDauKy.soTien": { $gt: 0 } },
-            "tenGiaoDich hoVaTen soDuDauKy"
-        ).lean();
-        nhaKhoaSoDu.forEach(nk => allIds.add(nk._id.toString()));
-
-        // ── 5. Query NhaKhoa (bao gồm soDuDauKy) ───────────────────────────
-        const nhaKhoaList = await NhaKhoa.find(
-            { _id: { $in: [...allIds] } },
-            "tenGiaoDich hoVaTen soDuDauKy"
-        ).lean();
-
-        const nkMap = nhaKhoaList.reduce((m, x) => { m[x._id.toString()] = x; return m; }, {});
-        const soDuMap = nhaKhoaList.reduce((m, x) => {
-            const sd = x.soDuDauKy;
-            if (sd?.thang === thang && sd?.nam === nam) {
-                m[x._id.toString()] = sd.soTien;
-            }
-            return m;
-        }, {});
-
-        // ── 6. Tính toán ─────────────────────────────────────────────────────
+        // ── 4. TÍNH TOÁN BÁO CÁO TOÀN DIỆN ──
         let tongNoDauKy = 0, tongPhatSinh = 0, tongThanhToan = 0, tongConNo = 0;
+        const chiTiet = [];
 
-        const chiTiet = [...allIds]
-            .map((id) => {
-                const tenNhaKhoa = nkMap[id]?.tenGiaoDich || nkMap[id]?.hoVaTen || "—";
+        for (const nk of nhaKhoaList) {
+            const id = nk._id.toString();
+            // Cập nhật lại giá trị mặc định theo biến mới gán ở Vị trí 1
+            const hd = hdMap[id] || { tongSoDuMigrate: 0, phatSinhTruoc: 0, phatSinhTrong: 0 };
+            const pt = ptMap[id] || { thanhToanTruoc: 0, thanhToanTrong: 0 };
 
-                const noDauKy = (soDuMap[id] || 0)
-                    + (hdTruoc[id]?.tong || 0)
-                    - (ptTruoc[id]?.tong || 0);
+            let noDauKy = 0;
 
-                const phatSinh = hdTrong[id]?.phatSinh || 0;
-                const thanhToan = ptTrong[id]?.thanhToan || 0;
-                const conNo = noDauKy + phatSinh - thanhToan;
+            const arrSoDu = Array.isArray(nk.soDuDauKy) ? nk.soDuDauKy : [];
+            const manualSoDu = arrSoDu.find(item => item.thang === thang && item.nam === nam);
 
+            if (manualSoDu) {
+                noDauKy = manualSoDu.soTien;
+            } else {
+                let noGocBanDau = 0;
+                if (hdMap[id]) {
+                    // 🔥 THAY THẾ TẠI ĐÂY: Lấy dữ liệu ổn định từ tổng số dư migrate thay vì firstNoDauKy
+                    noGocBanDau = hd.tongSoDuMigrate;
+                } else if (arrSoDu.length > 0) {
+                    const oldest = [...arrSoDu].sort((a, b) => (a.nam - b.nam) || (a.thang - b.thang))[0];
+
+                    if (nam < oldest.nam || (nam === oldest.nam && thang < oldest.thang)) {
+                        noGocBanDau = 0;
+                    } else {
+                        noGocBanDau = oldest.soTien;
+                    }
+                }
+                noDauKy = Math.round(noGocBanDau + hd.phatSinhTruoc - pt.thanhToanTruoc);
+            }
+
+            const phatSinh = Math.round(hd.phatSinhTrong);
+            const thanhToan = Math.round(pt.thanhToanTrong);
+            const conNo = Math.round(noDauKy + phatSinh - thanhToan);
+
+            if (noDauKy !== 0 || phatSinh !== 0 || thanhToan !== 0 || conNo !== 0) {
                 tongNoDauKy += noDauKy;
                 tongPhatSinh += phatSinh;
                 tongThanhToan += thanhToan;
                 tongConNo += conNo;
 
-                return { nhaKhoaId: id, tenNhaKhoa, noDauKy, phatSinh, thanhToan, conNo };
-            })
-            .filter(r => r.noDauKy !== 0 || r.phatSinh !== 0 || r.thanhToan !== 0 || r.conNo !== 0)
-            .sort((a, b) => a.tenNhaKhoa.localeCompare(b.tenNhaKhoa, "vi"))
-            .map((r, i) => ({ ...r, stt: i + 1 }));
+                chiTiet.push({
+                    nhaKhoaId: id,
+                    tenNhaKhoa: nk.tenGiaoDich || nk.hoVaTen || "—",
+                    noDauKy,
+                    phatSinh,
+                    thanhToan,
+                    conNo
+                });
+            }
+        }
+
+        chiTiet.sort((a, b) => a.tenNhaKhoa.localeCompare(b.tenNhaKhoa, "vi"));
+        const chiTietWithStt = chiTiet.map((r, i) => ({ ...r, stt: i + 1 }));
 
         res.json({
             success: true,
-            thang,
-            nam,
+            thang, nam,
             tongHop: { noDauKy: tongNoDauKy, phatSinh: tongPhatSinh, thanhToan: tongThanhToan, conNo: tongConNo },
-            chiTiet,
+            chiTiet: chiTietWithStt,
         });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
