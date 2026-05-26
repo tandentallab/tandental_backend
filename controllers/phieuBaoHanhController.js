@@ -143,7 +143,47 @@ exports.createPhieuBaoHanh = async (req, res) => {
 // [GET] Lấy tất cả phiếu bảo hành
 exports.getAllPhieuBaoHanh = async (req, res) => {
   try {
-    const phieus = await PhieuBaoHanh.find()
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    const search = req.query.search || "";
+    const nhaKhoaId = req.query.nhaKhoaId;
+    const fromDate = req.query.fromDate;
+    const toDate = req.query.toDate;
+
+    let query = {};
+    
+    if (nhaKhoaId && nhaKhoaId !== "all") {
+      query.nhaKhoa = nhaKhoaId;
+    }
+
+    if (fromDate || toDate) {
+      query.createdAt = {};
+      if (fromDate) query.createdAt.$gte = new Date(fromDate);
+      if (toDate) query.createdAt.$lte = new Date(toDate);
+    }
+    if (search && search.trim() !== "") {
+      const keyword = search.trim();
+      
+      // Tìm trước ID của Đơn hàng và Bệnh nhân khớp với keyword
+      const [donHangs, benhNhans] = await Promise.all([
+        DonHang.find({ maDonHang: { $regex: keyword, $options: "i" } }).select("_id"),
+        require("../models/BenhNhan").find({ hoVaTen: { $regex: keyword, $options: "i" } }).select("_id"),
+      ]);
+
+      const donHangIds = donHangs.map(d => d._id);
+      const benhNhanIds = benhNhans.map(b => b._id);
+
+      query.$or = [
+        { maBaoHanh: { $regex: keyword, $options: "i" } },
+        { donHang: { $in: donHangIds } },
+        { benhNhan: { $in: benhNhanIds } }
+      ];
+    }
+
+    const total = await PhieuBaoHanh.countDocuments(query);
+
+    const phieus = await PhieuBaoHanh.find(query)
       .populate({
         path: "donHang",
         select: "_id maDonHang ngayNhan",
@@ -164,10 +204,15 @@ exports.getAllPhieuBaoHanh = async (req, res) => {
         path: "danhSachBaoHanh.sanPham",
         select: "tenSanPham",
       })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     res.status(200).json({
       success: true,
+      total,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
       count: phieus.length,
       data: phieus,
     });
