@@ -212,19 +212,27 @@ exports.updateDonHang = async (req, res) => {
     try {
         const { nhatKyLogEntry, nhatKyChinhSua: _nhatKy, nguoiThucDuyet: _nguoi, ...updateData } = req.body;
 
-        // 🔥 ================= CHỐT CHẶN BẢO VỆ NGÀY NHẬN ================= 🔥
-        // Lấy đơn hàng hiện tại lên check thử, nếu có đổi ngayNhan và đã xuất HĐ thì chặn lại
+        // Lấy đơn hàng hiện tại để kiểm tra trạng thái khoá
+        const donHangHienTai = await DonHang.findById(req.params.id).select("trangThai daXuatHoaDon ngayNhan");
+        if (!donHangHienTai) {
+            return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
+        }
+        if (donHangHienTai.trangThai === "Đã giao" || donHangHienTai.daXuatHoaDon) {
+            return res.status(400).json({
+                success: false,
+                message: "Không thể chỉnh sửa đơn hàng đã xuất hóa đơn hoặc đã giao",
+            });
+        }
+
+        // 🔥 Bảo vệ ngày nhận nếu đã xuất HĐ (redundant nhưng giữ lại an toàn)
         if (updateData.ngayNhan) {
-            const donHangHienTai = await DonHang.findById(req.params.id);
-            if (donHangHienTai && donHangHienTai.daXuatHoaDon) {
-                const oldDate = new Date(donHangHienTai.ngayNhan).getTime();
-                const newDate = new Date(updateData.ngayNhan).getTime();
-                if (oldDate !== newDate) {
-                    return res.status(400).json({
-                        success: false,
-                        message: "Đơn hàng này đã được xuất hóa đơn, hệ thống đã đóng băng không cho phép sửa ngày nhận!"
-                    });
-                }
+            const oldDate = new Date(donHangHienTai.ngayNhan).getTime();
+            const newDate = new Date(updateData.ngayNhan).getTime();
+            if (oldDate !== newDate && donHangHienTai.daXuatHoaDon) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Đơn hàng này đã được xuất hóa đơn, hệ thống đã đóng băng không cho phép sửa ngày nhận!"
+                });
             }
         }
         const updateOp = { $set: updateData };
@@ -292,10 +300,17 @@ exports.updateCongDoanStatus = async (req, res) => {
 // [DELETE] Xóa đơn hàng
 exports.deleteDonHang = async (req, res) => {
     try {
-        const deletedDonHang = await DonHang.findByIdAndDelete(req.params.id);
-        if (!deletedDonHang) {
+        const donHang = await DonHang.findById(req.params.id).select("trangThai daXuatHoaDon");
+        if (!donHang) {
             return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
         }
+        if (donHang.trangThai === "Đã giao" || donHang.daXuatHoaDon) {
+            return res.status(400).json({
+                success: false,
+                message: "Không thể xóa đơn hàng đã xuất hóa đơn hoặc đã giao",
+            });
+        }
+        await DonHang.findByIdAndDelete(req.params.id);
         res.status(200).json({ success: true, message: "Xóa đơn hàng thành công" });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
