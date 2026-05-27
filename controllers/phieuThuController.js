@@ -214,30 +214,30 @@ exports.createPhieuThu = async (req, res) => {
     session.endSession();
   }
 };
-/* ================= CẬP NHẬT PHIẾU THU (ĐỒNG BỘ LOGIC MỚI) ================= */
+
 exports.updatePhieuThu = async (req, res) => {
   const session = await mongoose.startSession();
   try {
     let updatedPhieu;
     await session.withTransaction(async () => {
       const { id } = req.params;
-      const { ngayThu, phuongThucThanhToan, noiDung, soTienThu } = req.body;
+      const { ngayThu, phuongThucThanhToan, noiDung, danhSachHoaDon } = req.body;
 
       const phieuThu = await PhieuThu.findById(id).session(session);
       if (!phieuThu) throw new Error("Không tìm thấy phiếu thu");
 
+      // 1. Cập nhật các thông tin cơ bản
       if (ngayThu !== undefined) phieuThu.ngayThu = ngayThu;
       if (phuongThucThanhToan !== undefined) phieuThu.phuongThucThanhToan = phuongThucThanhToan;
       if (noiDung !== undefined) phieuThu.noiDung = noiDung;
 
-      if (soTienThu !== undefined && Number(soTienThu) !== phieuThu.soTienThu) {
-        const newTotal = Number(soTienThu);
+      // 2. Kế toán phân bổ lại tiền cho từng hóa đơn
+      if (danhSachHoaDon && Array.isArray(danhSachHoaDon)) {
 
-        // A: HOÀN TÁC TRẠNG THÁI CŨ CỦA CÁC HÓA ĐƠN ĐÃ ĐƯỢC RÓT TIỀN TRƯỚC ĐÓ
+        // BƯỚC A: HOÀN TÁC TOÀN BỘ TIỀN CỦA PHIẾU THU CŨ
         for (const item of phieuThu.danhSachHoaDon) {
           const hd = await HoaDon.findById(item.hoaDon).session(session);
           if (hd) {
-            // Trừ bớt số tiền thu đợt trước ra khỏi tổng tích lũy
             hd.daThanhToan = Math.max(0, (hd.daThanhToan || 0) - (item.soTienThanhToan || 0));
             hd.conLai = Math.round((hd.giaTriThanhToan || 0) - hd.daThanhToan);
 
@@ -245,66 +245,57 @@ exports.updatePhieuThu = async (req, res) => {
             else if (hd.daThanhToan > 0) hd.trangThai = "Thanh toán một phần";
             else hd.trangThai = "Chưa thanh toán";
 
-            // Đồng bộ công nợ thực tế bằng trường conLai
-            hd.congNoCuoiKy = hd.conLai;
             await hd.save({ session });
           }
         }
 
-        let nhaKhoaId = null;
-        if (phieuThu.danhSachHoaDon.length > 0) {
-          const mHoaDon = await HoaDon.findById(phieuThu.danhSachHoaDon[0].hoaDon).session(session);
-          if (mHoaDon) nhaKhoaId = mHoaDon.nhaKhoa;
-        }
-
-        if (!nhaKhoaId) throw new Error("Không xác định được Nha Khoa để chia lại thác nước");
-
-        // B: PHÂN BỔ LẠI DÒNG TIỀN MỚI THẲNG VÀO CÁC HÓA ĐƠN THEO FIFO
-        let tienThanhToan = newTotal;
+        // BƯỚC B: ÁP DỤNG MỨC TIỀN MỚI CHO TỪNG HÓA ĐƠN
+        let newTotal = 0;
         const danhSachLuuMoi = [];
 
-        const hoaDons = await HoaDon.find({
-          nhaKhoa: nhaKhoaId,
-          trangThai: { $ne: "Đã thanh toán" }
-        }).sort({ ngayXuatHoaDon: 1 }).session(session);
+        for (const item of danhSachHoaDon) {
+          const hdId = item.hoaDon;
+          const tienTra = Number(item.soTienThanhToan || 0);
 
-        for (const hd of hoaDons) {
-          if (tienThanhToan <= 0) break;
+          // Nếu kế toán sửa về 0đ thì bỏ qua hóa đơn này
+          if (tienTra <= 0) continue;
+
+          const hd = await HoaDon.findById(hdId).session(session);
+          if (!hd) throw new Error(`Không tìm thấy hóa đơn: ${hdId}`);
+
+          // Chặn bảo mật: Không cho phép rót tiền lố số nợ của Hóa đơn
+          if (tienTra > hd.conLai) {
+            throw new Error(`Hóa đơn ${hd.soHoaDon} chỉ còn nợ ${hd.conLai}, bạn không thể thanh toán ${tienTra}.`);
+          }
 
           const snapshotGiaTri = hd.giaTriThanhToan || 0;
           const snapshotDaTTruoc = hd.daThanhToan || 0;
           const snapshotConLaiTruoc = hd.conLai || 0;
 
-          const tienTraChoHdNay = Math.min(tienThanhToan, hd.conLai);
-
-          hd.daThanhToan += tienTraChoHdNay;
-          hd.conLai -= tienTraChoHdNay;
+          // Rót tiền mới vào
+          hd.daThanhToan += tienTra;
+          hd.conLai = Math.max(0, hd.giaTriThanhToan - hd.daThanhToan);
 
           if (hd.conLai <= 0) hd.trangThai = "Đã thanh toán";
           else if (hd.daThanhToan > 0) hd.trangThai = "Thanh toán một phần";
 
-          // Khớp với logic Schema mới
-          hd.congNoCuoiKy = hd.conLai;
           await hd.save({ session });
 
+          newTotal += tienTra;
           danhSachLuuMoi.push({
             hoaDon: hd._id,
-            soTienThanhToan: tienTraChoHdNay,
+            soTienThanhToan: tienTra,
             giaTriHoaDon: snapshotGiaTri,
             daTTruocLanNay: snapshotDaTTruoc,
             conLaiTruocLanNay: snapshotConLaiTruoc,
           });
-
-          tienThanhToan -= tienTraChoHdNay;
         }
 
-        // Cập nhật lại các chỉ số của Phiếu thu
+        // BƯỚC C: CHỐT TỔNG PHIẾU THU
         phieuThu.danhSachHoaDon = danhSachLuuMoi;
         phieuThu.soTienThu = newTotal;
-        phieuThu.duocKhauTru = newTotal - tienThanhToan;
-        phieuThu.tienTruVaoMigrate = 0; // Luôn bằng 0 vì nợ cũ đã chuyển sang hóa đơn xử lý
-        phieuThu.conThua = tienThanhToan;
-        phieuThu.markModified("danhSachHoaDon");
+        phieuThu.duocKhauTru = newTotal; // Số tiền rót thực tế
+        phieuThu.conThua = 0; // Kế toán gõ đích danh từng HĐ nên vĩnh viễn không có tiền thừa
       }
 
       await phieuThu.save({ session });

@@ -161,6 +161,7 @@ exports.getDoanhThuThang = async (req, res) => {
         const thang = parseInt(req.query.thang) || new Date().getMonth() + 1;
         const nam = parseInt(req.query.nam) || new Date().getFullYear();
 
+        // Đảm bảo bạn đã khai báo dayjs và VN_TZ ở đầu file controller
         const startOfMonth = dayjs
             .tz(`${nam}-${String(thang).padStart(2, "0")}-01`, VN_TZ)
             .startOf("day")
@@ -171,14 +172,12 @@ exports.getDoanhThuThang = async (req, res) => {
             .toDate();
 
         // ── 1. AGGREGATE HÓA ĐƠN: Tính Phát Sinh Thuần & Chốt Nợ Khởi Tạo ──
+        // ĐÃ XÓA lệnh $sort để tăng tốc tối đa cho Server
         const hdStats = await HoaDon.aggregate([
-            { $sort: { createdAt: 1 } }, // Cũ nhất lên đầu để lấy firstNoDauKy
             {
                 $group: {
                     _id: "$nhaKhoa",
-                    // Nợ gốc khởi tạo hệ thống vĩnh viễn nằm ở Hóa đơn đầu tiên
                     tongSoDuMigrate: { $sum: "$soDuMigrate" },
-
                     phatSinhTruoc: {
                         $sum: {
                             $cond: [
@@ -215,7 +214,6 @@ exports.getDoanhThuThang = async (req, res) => {
 
         // ── 2. AGGREGATE PHIẾU THU: Dòng tiền thực tế khách đã nộp ──
         const ptStats = await PhieuThu.aggregate([
-            // Tìm nhaKhoa thông qua hóa đơn đầu tiên trong danh sách của phiếu thu
             {
                 $lookup: {
                     from: "hoadons",
@@ -225,17 +223,15 @@ exports.getDoanhThuThang = async (req, res) => {
                 }
             },
             { $unwind: { path: "$hdList", preserveNullAndEmptyArrays: true } },
-            // Group lại theo _id Phiếu Thu để không bị nhân đôi soTienThu nếu phiếu trả cho nhiều bill
             {
                 $group: {
                     _id: "$_id",
                     nhaKhoa: { $first: "$hdList.nhaKhoa" },
                     ngayThu: { $first: "$ngayThu" },
-                    soTienThu: { $first: "$soTienThu" } // Lấy tổng tiền nộp thực tế
+                    soTienThu: { $first: "$soTienThu" }
                 }
             },
             { $match: { nhaKhoa: { $ne: null } } },
-            // Group theo Nha Khoa để cộng dồn tiền
             {
                 $group: {
                     _id: "$nhaKhoa",
@@ -266,38 +262,40 @@ exports.getDoanhThuThang = async (req, res) => {
 
         for (const nk of nhaKhoaList) {
             const id = nk._id.toString();
-            // Cập nhật lại giá trị mặc định theo biến mới gán ở Vị trí 1
             const hd = hdMap[id] || { tongSoDuMigrate: 0, phatSinhTruoc: 0, phatSinhTrong: 0 };
             const pt = ptMap[id] || { thanhToanTruoc: 0, thanhToanTrong: 0 };
 
             let noDauKy = 0;
 
             const arrSoDu = Array.isArray(nk.soDuDauKy) ? nk.soDuDauKy : [];
-            const manualSoDu = arrSoDu.find(item => item.thang === thang && item.nam === nam);
+            // Tìm mốc thời gian chốt nợ Migrate
+            const oldest = arrSoDu.length > 0
+                ? [...arrSoDu].sort((a, b) => (a.nam - b.nam) || (a.thang - b.thang))[0]
+                : null;
 
-            if (manualSoDu) {
-                noDauKy = manualSoDu.soTien;
-            } else {
-                let noGocBanDau = 0;
-                if (hdMap[id]) {
-                    // 🔥 THAY THẾ TẠI ĐÂY: Lấy dữ liệu ổn định từ tổng số dư migrate thay vì firstNoDauKy
-                    noGocBanDau = hd.tongSoDuMigrate;
-                } else if (arrSoDu.length > 0) {
-                    const oldest = [...arrSoDu].sort((a, b) => (a.nam - b.nam) || (a.thang - b.thang))[0];
+            let noGocBanDau = 0;
 
-                    if (nam < oldest.nam || (nam === oldest.nam && thang < oldest.thang)) {
-                        noGocBanDau = 0;
-                    } else {
-                        noGocBanDau = oldest.soTien;
-                    }
+            // 1. CHỐNG XUYÊN KHÔNG: Đang xem báo cáo các tháng TRƯỚC KHI chốt nợ
+            if (oldest && (nam < oldest.nam || (nam === oldest.nam && thang < oldest.thang))) {
+                noGocBanDau = 0;
+            }
+            // 2. LẤY NỢ KHỞI TẠO: Đang xem báo cáo TỪ THÁNG CHỐT NỢ TRỞ ĐI
+            else {
+                // CHỐNG KỊCH BẢN TẠO HĐ TRƯỚC, NHẬP MIGRATE SAU (Dùng !== 0)
+                if (hdMap[id] && hd.tongSoDuMigrate !== 0) {
+                    noGocBanDau = hd.tongSoDuMigrate; // Đã có HĐ gánh nợ -> Lấy số bất biến
+                } else if (oldest) {
+                    noGocBanDau = oldest.soTien;      // Chưa có HĐ, HOẶC HĐ tạo trước khi nhập Migrate -> Lấy số nhập tay
                 }
-                noDauKy = Math.round(noGocBanDau + hd.phatSinhTruoc - pt.thanhToanTruoc);
             }
 
+            // 3. TOÁN HỌC ĐỒNG NHẤT
+            noDauKy = Math.round(noGocBanDau + hd.phatSinhTruoc - pt.thanhToanTruoc);
             const phatSinh = Math.round(hd.phatSinhTrong);
             const thanhToan = Math.round(pt.thanhToanTrong);
             const conNo = Math.round(noDauKy + phatSinh - thanhToan);
 
+            // 4. LỌC: Chỉ đưa vào báo cáo những Nha khoa có phát sinh giao dịch hoặc còn nợ
             if (noDauKy !== 0 || phatSinh !== 0 || thanhToan !== 0 || conNo !== 0) {
                 tongNoDauKy += noDauKy;
                 tongPhatSinh += phatSinh;
