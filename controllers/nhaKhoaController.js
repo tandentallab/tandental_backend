@@ -27,15 +27,25 @@ exports.updateSoDuDauKy = async (req, res) => {
       return res.status(400).json({ message: "Thiếu thang, nam hoặc soTien" });
     }
 
-    const updated = await NhaKhoa.findByIdAndUpdate(
-      id,
-      { $set: { soDuDauKy: { thang: Number(thang), nam: Number(nam), soTien: Number(soTien) } } },
-      { new: true, runValidators: true }
+    const nhaKhoa = await NhaKhoa.findById(id);
+    if (!nhaKhoa) return res.status(404).json({ message: "Không tìm thấy nha khoa" });
+
+    // Đảm bảo là mảng
+    if (!Array.isArray(nhaKhoa.soDuDauKy)) nhaKhoa.soDuDauKy = [];
+
+    // Tìm xem tháng/năm này đã có chưa
+    const existingIndex = nhaKhoa.soDuDauKy.findIndex(
+      (item) => item.thang === Number(thang) && item.nam === Number(nam)
     );
 
-    if (!updated) return res.status(404).json({ message: "Không tìm thấy nha khoa" });
+    if (existingIndex !== -1) {
+      nhaKhoa.soDuDauKy[existingIndex].soTien = Number(soTien); // Update
+    } else {
+      nhaKhoa.soDuDauKy.push({ thang: Number(thang), nam: Number(nam), soTien: Number(soTien) }); // Thêm mới
+    }
 
-    res.json({ success: true, data: updated });
+    await nhaKhoa.save();
+    res.json({ success: true, data: nhaKhoa });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
