@@ -184,7 +184,7 @@ exports.getAllDonHang = async (req, res) => {
 exports.getDonHangById = async (req, res) => {
     try {
         const donHang = await DonHang.findById(req.params.id)
-            .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe")
+            .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe moTa")
             .populate("bacSi", "hoVaTen soDienThoai email")
             .populate("benhNhan", "hoVaTen soHoSo soDienThoai")
             .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh baoHanhMacDinh")
