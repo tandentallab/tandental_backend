@@ -137,16 +137,13 @@ exports.getDonHangChuaXuatHoaDon = async (req, res) => {
       query.nhaKhoa = nhaKhoaId;
     }
 
-    // 🔥 LOGIC LỌC THEO NGÀY NHẬN
     if (tuNgay || denNgay) {
       query.ngayNhan = {};
       if (tuNgay) {
-        // SỬA CHÍNH TẠI ĐÂY: dayjs(tuNgay).tz(...) thay vì dayjs.tz(tuNgay, ...)
-        query.ngayNhan.$gte = dayjs(tuNgay).tz(VN_TZ).startOf('day').toDate();
+        query.ngayNhan.$gte = dayjs.tz(tuNgay, VN_TZ).startOf('day').toDate();
       }
       if (denNgay) {
-        // SỬA CHÍNH TẠI ĐÂY: dayjs(denNgay).tz(...)
-        query.ngayNhan.$lte = dayjs(denNgay).tz(VN_TZ).endOf('day').toDate();
+        query.ngayNhan.$lte = dayjs.tz(denNgay, VN_TZ).endOf('day').toDate();
       }
     }
 
@@ -156,11 +153,27 @@ exports.getDonHangChuaXuatHoaDon = async (req, res) => {
       .populate("nhaKhoa", "hoVaTen tenNhaKhoa")
       .sort({ ngayNhan: 1 });
 
-    res.json(donHangs);
+    // 🔥 DÙNG JAVASCRIPT ĐỂ LỌC SẠCH MẢNG SẢN PHẨM TRƯỚC KHI TRẢ VỀ
+    const donHangsDaLoc = donHangs.map(don => {
+      const donObj = don.toObject();
+
+      if (donObj.danhSachSanPham) {
+        // Chỉ giữ lại sản phẩm "Mới"
+        donObj.danhSachSanPham = donObj.danhSachSanPham.filter(sp => sp.loaiDon === "Mới");
+      }
+
+      return donObj;
+    });
+
+    // Bước bảo vệ: Tránh trường hợp đơn hàng lọc xong không còn sản phẩm nào
+    const donHangsCuoiCung = donHangsDaLoc.filter(don => don.danhSachSanPham && don.danhSachSanPham.length > 0);
+
+    res.json(donHangsCuoiCung);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 // ================= ĐẾM SỐ ĐƠN HÀNG CHƯA XUẤT HÓA ĐƠN =================
 exports.countDonHangChuaXuatHoaDonAll = async (req, res) => {
@@ -171,6 +184,18 @@ exports.countDonHangChuaXuatHoaDonAll = async (req, res) => {
           daXuatHoaDon: { $ne: true },
           "danhSachSanPham.loaiDon": "Mới",
         },
+      },
+      // 🔥 Thêm block này để lọc sạch mảng sản phẩm ngay từ trong Database
+      {
+        $set: {
+          danhSachSanPham: {
+            $filter: {
+              input: "$danhSachSanPham",
+              as: "sp",
+              cond: { $eq: ["$$sp.loaiDon", "Mới"] }
+            }
+          }
+        }
       },
       {
         $group: {
@@ -194,7 +219,7 @@ exports.countDonHangChuaXuatHoaDonAll = async (req, res) => {
           let: { nhaKhoaId: "$nhaKhoa._id" },
           pipeline: [
             { $match: { $expr: { $eq: ["$nhaKhoa", "$$nhaKhoaId"] } } },
-            { $sort: { denNgay: -1 } },
+            { $sort: { denNgay: -1 } }, // 🔥 Đã sửa thành denNgay chuẩn kế toán
             { $limit: 1 },
             { $project: { _id: 0, ngayXuatHoaDon: 1, giaTriThanhToan: 1, trangThai: 1 } },
           ],
