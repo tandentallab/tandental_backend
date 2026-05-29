@@ -45,6 +45,25 @@ exports.createPhieuBaoHanh = async (req, res) => {
       return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
     }
 
+    // Xử lý phiếu bảo hành mồ côi (tránh lỗi E11000 trùng mã bảo hành khi đơn hàng cũ đã bị xóa)
+    const maBaoHanhTarget = donHangRecord.maDonHang;
+    if (maBaoHanhTarget) {
+      const phieuTrungMa = await PhieuBaoHanh.findOne({ maBaoHanh: maBaoHanhTarget });
+      if (phieuTrungMa && phieuTrungMa.donHang?.toString() !== donHang) {
+        const oldOrderExists = await DonHang.findById(phieuTrungMa.donHang);
+        if (!oldOrderExists) {
+          // Đơn hàng cũ không còn tồn tại -> Xóa phiếu bảo hành mồ côi này đi
+          await PhieuBaoHanh.findByIdAndDelete(phieuTrungMa._id);
+        } else {
+          // Đơn hàng cũ vẫn tồn tại -> Trùng mã thực tế, báo lỗi cho Client
+          return res.status(400).json({
+            success: false,
+            message: `Mã bảo hành ${maBaoHanhTarget} đã được sử dụng cho một đơn hàng khác.`
+          });
+        }
+      }
+    }
+
     const nhaKhoaRecord = donHangRecord.nhaKhoa
       ? await NhaKhoa.findById(donHangRecord.nhaKhoa).select("hoVaTen tenGiaoDich soDienThoai")
       : null;
@@ -56,6 +75,7 @@ exports.createPhieuBaoHanh = async (req, res) => {
         viTriRang: item.viTriRang || "",
         soLuong: Number(item.soLuong) || 1,
         mau: item.mau || "",
+        tenSanPhamBaoHanh: item.tenSanPhamBaoHanh || "",
         baoHanhTu: item.baoHanhTu,
         baoHanhDen: item.baoHanhDen,
       }));
