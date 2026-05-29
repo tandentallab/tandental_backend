@@ -78,6 +78,7 @@ async function buildDanhSachSanPham(donHangIds, nhaKhoaId, session = null) {
     const donHang = donHangById[donHangId.toString()];
 
     for (const spItem of donHang.danhSachSanPham) {
+      if (spItem.loaiDon !== "Mới") continue;
       const sanPhamId = spItem.sanPham.toString();
       const sanPham = sanPhamMap[sanPhamId];
 
@@ -137,13 +138,16 @@ exports.getDonHangChuaXuatHoaDon = async (req, res) => {
       query.nhaKhoa = nhaKhoaId;
     }
 
+    // 🔥 LOGIC LỌC THEO NGÀY NHẬN
     if (tuNgay || denNgay) {
       query.ngayNhan = {};
       if (tuNgay) {
-        query.ngayNhan.$gte = dayjs.tz(tuNgay, VN_TZ).startOf('day').toDate();
+        // SỬA CHÍNH TẠI ĐÂY: dayjs(tuNgay).tz(...) thay vì dayjs.tz(tuNgay, ...)
+        query.ngayNhan.$gte = dayjs(tuNgay).tz(VN_TZ).startOf('day').toDate();
       }
       if (denNgay) {
-        query.ngayNhan.$lte = dayjs.tz(denNgay, VN_TZ).endOf('day').toDate();
+        // SỬA CHÍNH TẠI ĐÂY: dayjs(denNgay).tz(...)
+        query.ngayNhan.$lte = dayjs(denNgay).tz(VN_TZ).endOf('day').toDate();
       }
     }
 
@@ -616,14 +620,47 @@ exports.updateHoaDon = async (req, res) => {
 
       // ================= 2. KIỂM TRA ĐIỀU KIỆN KHÓA TÀI CHÍNH =================
       const isPaid = hoaDon.daThanhToan > 0;
-      const hoaDonMoiHon = await HoaDon.findOne({
-        nhaKhoa: hoaDon.nhaKhoa,
-        denNgay: { $gt: hoaDon.denNgay }
-      }).session(session);
 
-      // CHỈ cho phép xử lý logic tiền bạc khi HÓA ĐƠN CHƯA THANH TOÁN VÀ LÀ KỲ MỚI NHẤT
-      const allowFinancialUpdate = !isPaid && !hoaDonMoiHon;
+      // CHỈ chặn duy nhất trường hợp hóa đơn đã có Phiếu thu (isPaid = true)
+      const allowFinancialUpdate = !isPaid;
 
+      // 🔥 LOGIC THÔNG MINH: Chỉ chặn khi các con số THỰC SỰ bị lệch so với Database
+      let isTryingToChangeMoney = false;
+
+      // 1. Check tiền ở tổng hóa đơn
+      if (chietKhau !== undefined && Number(chietKhau) !== hoaDon.chietKhau) isTryingToChangeMoney = true;
+      if (thue !== undefined && Number(thue) !== hoaDon.thue) isTryingToChangeMoney = true;
+      if (chiPhiKhac !== undefined && Number(chiPhiKhac) !== hoaDon.chiPhiKhac) isTryingToChangeMoney = true;
+      if (danhSachDonHangIds) isTryingToChangeMoney = true; // Thêm bớt đơn hàng là chắc chắn đổi tiền
+
+      // 2. Check sâu vào từng sản phẩm (Đơn giá/Thành tiền là snapshot, KHÔNG CHECK)
+      if (danhSachSanPhamMoi?.length) {
+        for (const spMoi of danhSachSanPhamMoi) {
+          const spCu = hoaDon.danhSachSanPham.find((s) =>
+            spMoi.sanPhamDonHangId
+              ? s.sanPhamDonHangId?.toString() === spMoi.sanPhamDonHangId.toString()
+              : s.donHang?.toString() === spMoi.donHang?.toString() &&
+              s.sanPham?.toString() === spMoi.sanPham?.toString()
+          );
+
+          if (spCu) {
+            // CHỈ check sửa Giảm giá và Loại giảm giá
+            if (spMoi.giamGia !== undefined && Number(spMoi.giamGia) !== (spCu.giamGia || 0)) {
+              isTryingToChangeMoney = true; break;
+            }
+            if (spMoi.loaiGiamGia !== undefined && spMoi.loaiGiamGia !== spCu.loaiGiamGia) {
+              isTryingToChangeMoney = true; break;
+            }
+          }
+        }
+      }
+
+      // Xong xuôi mới đem đi phán xét
+      if (!allowFinancialUpdate && isTryingToChangeMoney) {
+        throw new Error("Hóa đơn này đã được thanh toán, tuyệt đối không thể thay đổi số tiền hay giảm giá sản phẩm!");
+      }
+
+      // ================= CẬP NHẬT TÀI CHÍNH (NẾU ĐƯỢC PHÉP) =================
       if (allowFinancialUpdate) {
         if (chietKhau !== undefined && Number(chietKhau) < 0) throw new Error("Chiết khấu không hợp lệ");
         if (thue !== undefined && Number(thue) < 0) throw new Error("Thuế không hợp lệ");
@@ -660,17 +697,21 @@ exports.updateHoaDon = async (req, res) => {
 
             if (!sp) return;
 
+            // ✅ CHỈ CẬP NHẬT GIẢM GIÁ (Tuyệt đối không gán đè Đơn giá)
             if (spMoi.giamGia !== undefined) {
               const giamGiaTien = Math.max(0, Number(spMoi.giamGia));
+              // So sánh với thanhTien snapshot bất di bất dịch
               if (giamGiaTien > sp.thanhTien) {
-                throw new Error(`Giảm giá vượt quá thành tiền của sản phẩm: ${sp.tenSanPham}`);
+                throw new Error(`Giảm giá vượt quá thành tiền của sản phẩm: ${sp.tenSanPham || 'Sản phẩm'}`);
               }
               sp.giamGia = roundMoney(giamGiaTien);
-              sp.tongCongSanPham = roundMoney(sp.thanhTien - sp.giamGia);
             }
 
             if (spMoi.loaiGiamGia !== undefined) sp.loaiGiamGia = spMoi.loaiGiamGia;
             if (spMoi.ghiChu !== undefined) sp.ghiChu = spMoi.ghiChu;
+
+            // Tính lại tổng cộng sản phẩm dựa trên thanhTien snapshot
+            sp.tongCongSanPham = roundMoney(sp.thanhTien - (sp.giamGia || 0));
           });
 
           hoaDon.tongCong = roundMoney(
@@ -697,10 +738,11 @@ exports.updateHoaDon = async (req, res) => {
         hoaDon.trangThai = autoTrangThai(hoaDon.conLai, hoaDon.daThanhToan);
       }
 
-      // Lưu lại hóa đơn (Nếu allowFinancialUpdate = false, nó chỉ cập nhật các trường ở mục 1)
+      // Lưu lại hóa đơn (Nếu allowFinancialUpdate = false, nó chỉ cập nhật các trường ghi chú ở mục 1)
       await hoaDon.save({ session });
       updatedHoaDon = hoaDon;
     });
+
     // Lấy lại hóa đơn đã được Populate đầy đủ y hệt như hàm getHoaDonById
     const finalHoaDon = await HoaDon.findById(updatedHoaDon._id)
       .populate("nhaKhoa", "tenNhaKhoa hoVaTen soDienThoai email diaChi tinh")
