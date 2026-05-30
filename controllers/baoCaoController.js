@@ -249,58 +249,58 @@ exports.getDoanhThuThang = async (req, res) => {
                 }
             }
         ]);
-
-        // ── 3. LẤY DANH SÁCH NHA KHOA ĐỂ MAP DATA ──
-        const nhaKhoaList = await NhaKhoa.find({}, "tenGiaoDich hoVaTen soDuDauKy").lean();
+        // ── 3. LẤY DANH SÁCH NHA KHOA (NHỚ GIỮ LẠI TRƯỜNG soDuDauKy) ──
+        const nhaKhoaList = await NhaKhoa.find({}, "tenGiaoDich hoVaTen soDuDauKy ghiChuThang").lean();
 
         const hdMap = hdStats.reduce((m, x) => { m[x._id.toString()] = x; return m; }, {});
         const ptMap = ptStats.reduce((m, x) => { m[x._id.toString()] = x; return m; }, {});
 
-        // ── 4. TÍNH TOÁN BÁO CÁO TOÀN DIỆN ──
+        // ── 4. TÍNH TOÁN BÁO CÁO TOÀN DIỆN VỚI MỐC "BẤT ĐỊNH" THÁNG GO-LIVE ──
         let tongNoDauKy = 0, tongPhatSinh = 0, tongThanhToan = 0, tongConNo = 0;
         const chiTiet = [];
 
         for (const nk of nhaKhoaList) {
             const id = nk._id.toString();
-            const hd = hdMap[id] || { tongSoDuMigrate: 0, phatSinhTruoc: 0, phatSinhTrong: 0 };
+            const hd = hdMap[id] || { phatSinhTruoc: 0, phatSinhTrong: 0 };
             const pt = ptMap[id] || { thanhToanTruoc: 0, thanhToanTrong: 0 };
 
             let noDauKy = 0;
+            const phatSinh = Math.round(hd.phatSinhTrong);
+            const thanhToan = Math.round(pt.thanhToanTrong);
 
+            // Tìm mốc khởi tạo của Nha Khoa (Tháng nhập số dư đầu kỳ)
             const arrSoDu = Array.isArray(nk.soDuDauKy) ? nk.soDuDauKy : [];
-            // Tìm mốc thời gian chốt nợ Migrate
-            const oldest = arrSoDu.length > 0
+            const goLive = arrSoDu.length > 0
                 ? [...arrSoDu].sort((a, b) => (a.nam - b.nam) || (a.thang - b.thang))[0]
                 : null;
 
-            let noGocBanDau = 0;
-
-            // 1. CHỐNG XUYÊN KHÔNG: Đang xem báo cáo các tháng TRƯỚC KHI chốt nợ
-            if (oldest && (nam < oldest.nam || (nam === oldest.nam && thang < oldest.thang))) {
-                noGocBanDau = 0;
-            }
-            // 2. LẤY NỢ KHỞI TẠO: Đang xem báo cáo TỪ THÁNG CHỐT NỢ TRỞ ĐI
-            else {
-                // CHỐNG KỊCH BẢN TẠO HĐ TRƯỚC, NHẬP MIGRATE SAU (Dùng !== 0)
-                if (hdMap[id] && hd.tongSoDuMigrate !== 0) {
-                    noGocBanDau = hd.tongSoDuMigrate; // Đã có HĐ gánh nợ -> Lấy số bất biến
-                } else if (oldest) {
-                    noGocBanDau = oldest.soTien;      // Chưa có HĐ, HOẶC HĐ tạo trước khi nhập Migrate -> Lấy số nhập tay
+            if (goLive) {
+                // Kiểm tra xem báo cáo đang xem thuộc giai đoạn nào so với mốc Go-Live
+                if (nam < goLive.nam || (nam === goLive.nam && thang < goLive.thang)) {
+                    // Xem báo cáo TRƯỚC thời điểm chạy hệ thống -> Nợ = 0
+                    noDauKy = 0;
+                } else if (nam === goLive.nam && thang === goLive.thang) {
+                    // 🔥 ĐÚNG THÁNG GO-LIVE (Tháng 6): ÉP CỨNG LẤY SỐ TIỀN NHẬP TAY LÀM HẰNG SỐ CỐ ĐỊNH
+                    noDauKy = goLive.soTien;
+                } else {
+                    // TỪ THÁNG 7 TRỞ ĐI: Hệ thống thả trôi cho tự động tính lũy kế bình thường
+                    // (Vì bạn dùng Cách 1: có tạo Hóa đơn SDDK ngày 31/05, nên hd.phatSinhTruoc đã tự bao hàm số tiền gốc này rồi)
+                    noDauKy = Math.round(hd.phatSinhTruoc - pt.thanhToanTruoc);
                 }
+            } else {
+                // Nha khoa mới hoàn toàn, không nhập nợ cũ -> chạy logic bình thường
+                noDauKy = Math.round(hd.phatSinhTruoc - pt.thanhToanTruoc);
             }
 
-            // 3. TOÁN HỌC ĐỒNG NHẤT
-            noDauKy = Math.round(noGocBanDau + hd.phatSinhTruoc - pt.thanhToanTruoc);
-            const phatSinh = Math.round(hd.phatSinhTrong);
-            const thanhToan = Math.round(pt.thanhToanTrong);
             const conNo = Math.round(noDauKy + phatSinh - thanhToan);
 
-            // 4. LỌC: Chỉ đưa vào báo cáo những Nha khoa có phát sinh giao dịch hoặc còn nợ
+            // Chỉ đưa vào báo cáo những Nha khoa có phát sinh giao dịch hoặc còn nợ
             if (noDauKy !== 0 || phatSinh !== 0 || thanhToan !== 0 || conNo !== 0) {
                 tongNoDauKy += noDauKy;
                 tongPhatSinh += phatSinh;
                 tongThanhToan += thanhToan;
                 tongConNo += conNo;
+                const ghiChuEntry = (nk.ghiChuThang || []).find(g => g.thang === thang && g.nam === nam);
 
                 chiTiet.push({
                     nhaKhoaId: id,
@@ -308,7 +308,8 @@ exports.getDoanhThuThang = async (req, res) => {
                     noDauKy,
                     phatSinh,
                     thanhToan,
-                    conNo
+                    conNo,
+                    ghiChu: ghiChuEntry?.noiDung || '',
                 });
             }
         }

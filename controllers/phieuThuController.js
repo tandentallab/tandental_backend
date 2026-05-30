@@ -196,7 +196,6 @@ exports.createPhieuThu = async (req, res) => {
         ngayThu: ngayThuDate,
         soTienThu: tongTienThuThucTe,
         duocKhauTru: tongKhauTruThucTe, // Số tiền thực tế phân bổ vào các bill
-        tienTruVaoMigrate: 0,
         conThua: conThua,
         noiDung,
         phuongThucThanhToan,

@@ -93,14 +93,9 @@ const hoaDonSchema = new mongoose.Schema(
     thue: { type: Number, default: 0 },
     chiPhiKhac: { type: Number, default: 0 },
 
-    soDuMigrate: { type: Number, default: 0 },
-    // Nợ cũ tháng trước mang sang (hoặc số dư khởi tạo từ hệ thống cũ)
-    noDauKy: {
-      type: Number,
-      default: 0,
-    },
 
-    // UI truyền xuống: giaTriThanhToan = (tongCong - chietKhau) + thue + chiPhiKhac + noDauKy
+
+    // UI truyền xuống: giaTriThanhToan = (tongCong - chietKhau) + thue + chiPhiKhac
     giaTriThanhToan: { type: Number, default: 0 },
 
     // Tổng số tiền lũy kế đã trả cho đợt công nợ này (bao gồm nhiều lần tạo phiếu thu)
