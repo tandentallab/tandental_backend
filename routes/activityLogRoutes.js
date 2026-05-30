@@ -8,8 +8,7 @@ const {
 
 const {
   verifyToken,
-  authorizeRoles,
-  APP_ROLES,
+  checkPermission,
 } = require("../middleware/authMiddleware");
 
 
@@ -17,7 +16,7 @@ const {
 router.get(
   "/",
   verifyToken,
-  authorizeRoles(APP_ROLES.ADMIN),
+  checkPermission,
   getActivityLogs
 );
 

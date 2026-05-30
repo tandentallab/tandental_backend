@@ -7,13 +7,11 @@ const {
   updateBenhNhan,
 } = require("../controllers/benhNhanController");
 
-const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
-
-const allowAdminAndNhanVien = authorizeRoles(APP_ROLES.ADMIN, APP_ROLES.NHAN_VIEN);
+const { verifyToken, checkPermission } = require("../middleware/authMiddleware");
 
 
-router.post("/",verifyToken, allowAdminAndNhanVien, createBenhNhan);
-router.get("/",verifyToken, allowAdminAndNhanVien, getAllBenhNhan);
-router.put("/:id",verifyToken, allowAdminAndNhanVien, updateBenhNhan)
+router.post("/",verifyToken, checkPermission, createBenhNhan);
+router.get("/",verifyToken, checkPermission, getAllBenhNhan);
+router.put("/:id",verifyToken, checkPermission, updateBenhNhan)
 
 module.exports = router;

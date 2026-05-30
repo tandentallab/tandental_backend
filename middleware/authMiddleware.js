@@ -35,32 +35,170 @@ exports.authorizeRoles = (...allowedRoles) => {
         return res.status(401).json({ message: "Chưa xác thực tài khoản" });
       }
 
-      let appRole = req.user.appRole;
-
-      // Token cũ có thể chưa chứa appRole, fallback sang DB.
-      if (!appRole) {
-        const staff = await Staff.findById(req.user.id).populate("quyenSuDung");
-        if (!staff) {
-          return res.status(401).json({ message: "Tài khoản không tồn tại" });
-        }
-        appRole = resolveAppRoleFromStaff(staff);
+      // Luôn truy vấn thông tin nhân viên mới nhất từ DB để lấy permissions động thời gian thực
+      const staff = await Staff.findById(req.user.id).populate("quyenSuDung");
+      if (!staff) {
+        return res.status(401).json({ message: "Tài khoản không tồn tại" });
       }
 
+      const appRole = resolveAppRoleFromStaff(staff);
       req.user.appRole = appRole;
 
-      if (!normalizedAllowedRoles.has(String(appRole).toLowerCase())) {
-        return res.status(403).json({
-          message: "Bạn không có quyền truy cập tài nguyên này",
-          appRole,
-          allowedRoles: Array.from(normalizedAllowedRoles),
-        });
+      // 1. Nếu là Admin thì luôn luôn được phép truy cập
+      if (appRole === APP_ROLES.ADMIN) {
+        return next();
       }
 
-      next();
+      // 2. Kiểm tra phân quyền động (Dynamic Permissions)
+      const permissions = staff.quyenSuDung?.permissions || [];
+      const baseUrl = req.baseUrl || "";
+
+      // Ánh xạ từ api path (req.baseUrl) sang frontend menu path
+      const pathMap = {
+        "/api/nhakhoa": "/nha-khoa",
+        "/api/nguoilienhe": "/nguoi-lien-he",
+        "/api/benhnhan": "/benh-nhan",
+        "/api/sanpham": "/san-pham",
+        "/api/congdoan": "/cong-doan",
+        "/api/donhang": "/don-hang",
+        "/api/hoa-don": "/hoa-don",
+        "/api/phieu-thu": "/phieu-thu",
+        "/api/phieu-bao-hanh": "/phieu-bao-hanh",
+        "/api/mau-the-bao-hanh": "/mau-the-bao-hanh",
+        "/api/nhan-vien": "/nhan-vien",
+        "/api/bang-luong": "/bang-luong",
+        "/api/baocao": "/bao-cao",
+        "/api/quyen-su-dung": "/quyen-su-dung",
+        "/api/cong-ty": "/cong-ty",
+        "/api/nha-cung-cap": "/nha-cung-cap",
+      };
+
+      const mappedMenuPath = pathMap[baseUrl];
+      
+      // Nếu tài khoản có quyenSuDung được gán và route thuộc sơ đồ menu động
+      if (staff.quyenSuDung && mappedMenuPath) {
+        // Danh sách các catalog/danh mục cần cho phép đọc (GET) để làm dropdown ở các trang khác
+        const isCatalogLookup = [
+          "/api/nhakhoa",
+          "/api/sanpham",
+          "/api/benhnhan",
+          "/api/nguoilienhe",
+          "/api/congdoan",
+          "/api/nhan-vien",
+          "/api/bang-gia",
+          "/api/mau-the-bao-hanh"
+        ].includes(baseUrl);
+
+        if (req.method === "GET" && isCatalogLookup) {
+          return next(); // Cho phép đọc danh mục hỗ trợ (dropdown/charts)
+        }
+
+        if (permissions.includes(mappedMenuPath)) {
+          return next();
+        } else {
+          // Bị từ chối quyền truy cập động
+          return res.status(403).json({
+            message: `Tài khoản của bạn không có quyền truy cập chức năng này (yêu cầu quyền: ${mappedMenuPath})`,
+            appRole,
+            requiredPermission: mappedMenuPath,
+          });
+        }
+      }
+
+      // 3. Fallback: Kiểm tra vai trò cứng đối với các api đặc thù/cũ
+      if (normalizedAllowedRoles.has(String(appRole).toLowerCase())) {
+        return next();
+      }
+
+      return res.status(403).json({
+        message: "Bạn không có quyền truy cập tài nguyên này",
+        appRole,
+        allowedRoles: Array.from(normalizedAllowedRoles),
+        requiredPermission: mappedMenuPath || baseUrl,
+      });
     } catch (error) {
       return res.status(500).json({ message: error.message || "Lỗi phân quyền" });
     }
   };
+};
+
+exports.checkPermission = async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: "Chưa xác thực tài khoản" });
+    }
+
+    const staff = await Staff.findById(req.user.id).populate("quyenSuDung");
+    if (!staff) {
+      return res.status(401).json({ message: "Tài khoản không tồn tại" });
+    }
+
+    const appRole = resolveAppRoleFromStaff(staff);
+    req.user.appRole = appRole;
+
+    // 1. Admin luôn luôn được phép truy cập
+    if (appRole === APP_ROLES.ADMIN) {
+      return next();
+    }
+
+    // 2. Kiểm tra phân quyền động (Dynamic Permissions)
+    const permissions = staff.quyenSuDung?.permissions || [];
+    const baseUrl = req.baseUrl || "";
+
+    const pathMap = {
+      "/api/nhakhoa": "/nha-khoa",
+      "/api/nguoilienhe": "/nguoi-lien-he",
+      "/api/benhnhan": "/benh-nhan",
+      "/api/sanpham": "/san-pham",
+      "/api/congdoan": "/cong-doan",
+      "/api/donhang": "/don-hang",
+      "/api/hoa-don": "/hoa-don",
+      "/api/phieu-thu": "/phieu-thu",
+      "/api/phieu-bao-hanh": "/phieu-bao-hanh",
+      "/api/mau-the-bao-hanh": "/mau-the-bao-hanh",
+      "/api/nhan-vien": "/nhan-vien",
+      "/api/bang-luong": "/bang-luong",
+      "/api/baocao": "/bao-cao",
+      "/api/quyen-su-dung": "/quyen-su-dung",
+      "/api/cong-ty": "/cong-ty",
+      "/api/nha-cung-cap": "/nha-cung-cap",
+    };
+
+    const mappedMenuPath = pathMap[baseUrl];
+    
+    // Nếu tài khoản có quyenSuDung được gán và route thuộc sơ đồ menu động
+    if (staff.quyenSuDung && mappedMenuPath) {
+      const isCatalogLookup = [
+        "/api/nhakhoa",
+        "/api/sanpham",
+        "/api/benhnhan",
+        "/api/nguoilienhe",
+        "/api/congdoan",
+        "/api/nhan-vien",
+        "/api/bang-gia",
+        "/api/mau-the-bao-hanh"
+      ].includes(baseUrl);
+
+      if (req.method === "GET" && isCatalogLookup) {
+        return next(); // Cho phép đọc danh mục hỗ trợ (dropdown/charts)
+      }
+
+      if (permissions.includes(mappedMenuPath)) {
+        return next();
+      } else {
+        // Bị từ chối quyền truy cập động
+        return res.status(403).json({
+          message: `Tài khoản của bạn không có quyền truy cập chức năng này (yêu cầu quyền: ${mappedMenuPath})`,
+          appRole,
+          requiredPermission: mappedMenuPath,
+        });
+      }
+    }
+
+    next();
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Lỗi phân quyền động" });
+  }
 };
 
 exports.APP_ROLES = APP_ROLES;
