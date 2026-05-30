@@ -47,6 +47,10 @@ const phieuBaoHanhSchema = new mongoose.Schema(
           default: 1,
         },
         mau: String, // Màu sản phẩm
+        tenSanPhamBaoHanh: {
+          type: String,
+          default: "",
+        },
         baoHanhTu: {
           type: Date,
           required: true,
