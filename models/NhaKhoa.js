@@ -19,6 +19,13 @@ const nhaKhoaSchema = new mongoose.Schema(
         soTien: { type: Number, default: 0 },
       }
     ],
+    ghiChuThang: [
+      {
+        thang: { type: Number, required: true },
+        nam: { type: Number, required: true },
+        noiDung: { type: String, default: '' },
+      }
+    ],
   },
   { timestamps: true }
 );

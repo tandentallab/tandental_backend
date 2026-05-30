@@ -370,42 +370,19 @@ exports.createHoaDon = async (req, res) => {
 
       const nhaKhoaInfo = await mongoose.model("NhaKhoa").findById(nhaKhoaId).session(session);
       if (!nhaKhoaInfo) throw new Error("Không tìm thấy Nha Khoa");
-
-      let noMigrate = 0;
-
-      // 🔥 FIX BUG BỐC HƠI NỢ: Tìm xem có hóa đơn nào đang giữ nợ Migrate chưa?
-      const hdGiuNoMigrate = await HoaDon.findOne({
-        nhaKhoa: nhaKhoaId,
-        soDuMigrate: { $gt: 0 }
-      }).session(session);
-
-      // Nếu CHƯA CÓ hóa đơn nào giữ (hoặc hóa đơn giữ nợ đã bị xóa mất), hóa đơn mới này sẽ đứng ra gánh!
-      if (!hdGiuNoMigrate && Array.isArray(nhaKhoaInfo.soDuDauKy) && nhaKhoaInfo.soDuDauKy.length > 0) {
-        const oldest = [...nhaKhoaInfo.soDuDauKy].sort((a, b) => (a.nam - b.nam) || (a.thang - b.thang))[0];
-        noMigrate = roundMoney(oldest.soTien || 0);
-      }
-
-      // Lấy tổng nợ từ các HĐ cũ chưa thanh toán 
-      const cacHoaDonCu = await HoaDon.find({
-        nhaKhoa: nhaKhoaId,
-        trangThai: { $ne: "Đã thanh toán" },
-      }).session(session);
-      const tongNoHoaDonCu = cacHoaDonCu.reduce((sum, hd) => sum + (hd.conLai || 0), 0);
-
-      const noDauKy = roundMoney(tongNoHoaDonCu + noMigrate);
-
+      // Chỉ tính thuần túy phát sinh của kỳ này
       const phatSinhKyNay = calculateGiaTriThanhToan({ tongCong, chietKhau, thue, chiPhiKhac });
-      const giaTriThanhToan = phatSinhKyNay + noMigrate;
+
+      // Giá trị thanh toán bây giờ chỉ bằng đúng phát sinh kỳ này (Không cộng nợ cũ nữa)
+      const giaTriThanhToan = phatSinhKyNay;
       const conLai = giaTriThanhToan;
-
-
 
       const newHoaDon = new HoaDon({
         _id: newHoaDonId,
         soHoaDon: maSoHoaDon,
         nhaKhoa: nhaKhoaId,
-        tuNgay: finalTuNgay,   // Lưu chính xác ngày kế toán chọn
-        denNgay: finalDenNgay, // Lưu chính xác ngày kết thúc
+        tuNgay: finalTuNgay,
+        denNgay: finalDenNgay,
         danhSachSanPham,
         tongCong: roundMoney(tongCong),
         chietKhau: roundMoney(chietKhau),
@@ -414,8 +391,7 @@ exports.createHoaDon = async (req, res) => {
         giaTriThanhToan,
         daThanhToan: 0,
         conLai,
-        noDauKy,
-        soDuMigrate: noMigrate,
+        // 🔥 ĐÃ XÓA noDauKy VÀ soDuMigrate KHỎI PAYLOAD LƯU DB
         trangThai: autoTrangThai(conLai, 0),
         ghiChuNoiBo,
         ghiChuChoKhachHang,
@@ -464,7 +440,9 @@ exports.getAllHoaDonAdmin = async (req, res) => {
     const skip = (page - 1) * limit;
     const { trangThai, search, nhaKhoaId, fromDate, toDate } = req.query;
 
-    let query = {};
+    let query = {
+      soHoaDon: { $not: /^SDDK/i }
+    };
     const trangThaiQuery = buildTrangThaiQuery(trangThai);
     if (trangThaiQuery) query.trangThai = trangThaiQuery;
     if (nhaKhoaId && mongoose.Types.ObjectId.isValid(nhaKhoaId)) query.nhaKhoa = nhaKhoaId;
@@ -572,12 +550,34 @@ exports.getHoaDonById = async (req, res) => {
     const congNoNhaKhoa = await getCongNoNhaKhoa(
       hoaDon.nhaKhoa._id
     );
+    // 🔥 LOGIC CHUẨN NGHIỆP VỤ: Tính Nợ đầu kỳ động dựa trên NGÀY XUẤT HÓA ĐƠN
+    const cacHoaDonTruoc = await HoaDon.find({
+      nhaKhoa: hoaDon.nhaKhoa._id,
+      _id: { $ne: hoaDon._id }, // Trừ chính hóa đơn đang xem ra
+      trangThai: { $ne: "Đã thanh toán" }, // Chỉ lấy các hóa đơn còn nợ
+      $or: [
+        // Điều kiện 1: Ưu tiên tuyệt đối lấy các hóa đơn có Ngày Xuất cũ hơn
+        { ngayXuatHoaDon: { $lt: hoaDon.ngayXuatHoaDon } },
+
+        // Điều kiện 2: Xử lý ngoại lệ nếu có 2 hóa đơn CÙNG CHUNG 1 NGÀY XUẤT
+        // -> Hóa đơn nào được nhập vào phần mềm trước (createdAt) thì được tính là nợ cũ
+        {
+          ngayXuatHoaDon: hoaDon.ngayXuatHoaDon,
+          createdAt: { $lt: hoaDon.createdAt }
+        }
+      ]
+    });
+
+    // Cộng dồn tiền còn nợ của các hóa đơn cũ
+    const noDauKyDong = cacHoaDonTruoc.reduce((tong, hd) => tong + (hd.conLai || 0), 0);
 
     res.json({
       success: true,
       data: {
         ...hoaDon.toObject(),
         congNoNhaKhoa,
+        noDauKy: noDauKyDong, // Con số này giờ đây đã chuẩn 100% theo ngày xuất
+        tongCanThanhToan: hoaDon.giaTriThanhToan + noDauKyDong
       },
     });
   } catch (err) {
@@ -730,7 +730,7 @@ exports.updateHoaDon = async (req, res) => {
           chiPhiKhac: hoaDon.chiPhiKhac,
         });
 
-        hoaDon.giaTriThanhToan = phatSinhKyNay + (hoaDon.soDuMigrate || 0);
+        hoaDon.giaTriThanhToan = phatSinhKyNay;
 
         if (hoaDon.giaTriThanhToan < 0) throw new Error("Giá trị thanh toán cuối cùng không được âm");
 
@@ -862,7 +862,7 @@ exports.getHoaDonChuaThanhToanByNhaKhoa = async (req, res) => {
       nhaKhoa: nhaKhoaId,
       trangThai: { $in: ["Chưa thanh toán", "Thanh toán một phần"] },
     })
-      .select("_id soHoaDon ngayXuatHoaDon giaTriThanhToan daThanhToan conLai  trangThai soTienMigrate")
+      .select("_id soHoaDon ngayXuatHoaDon giaTriThanhToan daThanhToan conLai  trangThai")
       .sort({ ngayXuatHoaDon: 1, createdAt: 1 }); // 🔥 Sắp xếp cũ nhất lên đầu để dội thác nước đúng thứ tự
 
     res.json({ success: true, data: danhSach });
@@ -875,8 +875,10 @@ exports.thongKeCongNoHoaDon = async (req, res) => {
   try {
     const { nhaKhoaId } = req.query;
 
+    // 🔥 ĐÃ SỬA: Thêm điều kiện loại bỏ tất cả các hóa đơn bắt đầu bằng chữ SDDK
     let query = {
       trangThai: { $in: ["Chưa thanh toán", "Thanh toán một phần"] },
+      soHoaDon: { $not: /^SDDK/i }
     };
 
     if (nhaKhoaId && mongoose.Types.ObjectId.isValid(nhaKhoaId)) {
@@ -885,10 +887,8 @@ exports.thongKeCongNoHoaDon = async (req, res) => {
 
     const hoaDons = await HoaDon.find(query);
 
-    // 🔥 SỬA 1: Dùng dayjs để chuẩn hóa giờ hiện tại theo giờ Việt Nam
     const now = dayjs().tz(VN_TZ).valueOf();
 
-    // 🔥 SỬA 2: Viết lại hàm tính hạn chót (Luôn chốt ở 23:59:59 của ngày đó)
     const getNgayDenHan = (ngayXuatHoaDon, chinhSachThanhToan) => {
       const baseDate = dayjs(ngayXuatHoaDon).tz(VN_TZ);
 
@@ -907,7 +907,6 @@ exports.thongKeCongNoHoaDon = async (req, res) => {
         case "Thanh toán trong 90 ngày":
           return baseDate.add(90, 'day').endOf('day').valueOf();
         case "Thanh toán cuối tháng":
-          // Tự động lấy ngày cuối cùng của tháng đó, lúc 23:59:59
           return baseDate.endOf('month').valueOf();
         default:
           return baseDate.endOf('day').valueOf();
@@ -925,7 +924,6 @@ exports.thongKeCongNoHoaDon = async (req, res) => {
 
       const timestampDenHan = getNgayDenHan(hd.ngayXuatHoaDon, hd.chinhSachThanhToan);
 
-      // So sánh Timestamp (đảm bảo độ chính xác tuyệt đối không lo lệch múi giờ)
       if (now > timestampDenHan) {
         treHan.soHoaDon += 1;
         treHan.tongTien += soTienConLai;
