@@ -17,12 +17,17 @@ const uploadCCCDMiddleware = require("../middleware/uploadCCCD");
 
 
 const allowAdminAndKeToan = authorizeRoles(APP_ROLES.ADMIN, APP_ROLES.KE_TOAN);
+const allowAllBusinessRoles = authorizeRoles(
+  APP_ROLES.ADMIN,
+  APP_ROLES.KE_TOAN,
+  APP_ROLES.NHAN_VIEN
+);
 
 router.post("/", verifyToken, allowAdminAndKeToan, createNhanVien);
 
-router.get("/", verifyToken, allowAdminAndKeToan, getAllNhanVien);
+router.get("/", verifyToken, allowAllBusinessRoles, getAllNhanVien);
 
-router.get("/:id", verifyToken, allowAdminAndKeToan, getNhanVienById);
+router.get("/:id", verifyToken, allowAllBusinessRoles, getNhanVienById);
 
 router.put("/:id", verifyToken, allowAdminAndKeToan, updateNhanVien);
 
