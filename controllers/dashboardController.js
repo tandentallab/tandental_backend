@@ -61,18 +61,40 @@ exports.getChartStats = async (req, res) => {
         let resultData = [];
 
         if (chartType === "chart1") {
-            // CHART 1: THỐNG KÊ SỐ LƯỢNG THEO LOẠI ĐƠN (Mới / Sửa / Làm lại / Bảo hành)
+            // CHART 1: THỐNG KÊ SỐ LƯỢNG THEO LOẠI ĐƠN (Chỉ lấy Report Toàn Sứ & Report Hợp Kim)
             resultData = await DonHang.aggregate([
                 { $match: matchQuery },
                 // 1. Tách mảng danhSachSanPham ra thành từng object riêng biệt
                 { $unwind: "$danhSachSanPham" },
+
+                // 2. Lookup sang collection sanphams để lấy thông tin chi tiết của sản phẩm
+                {
+                    $lookup: {
+                        from: "sanphams",
+                        localField: "danhSachSanPham.sanPham", // Trỏ đúng vào trường sanPham (chứa ObjectId) trong schema DonHang
+                        foreignField: "_id",
+                        as: "thongTinSP"
+                    }
+                },
+
+                // 3. Unwind kết quả lookup
+                { $unwind: "$thongTinSP" },
+
+                // 4. Lọc chỉ lấy sản phẩm thuộc 2 nhóm yêu cầu
+                {
+                    $match: {
+                        "thongTinSP.nhomSanPham": {
+                            $in: ["Report Toàn Sứ", "Report Hợp Kim"]
+                        }
+                    }
+                },
+
+                // 5. Gom nhóm và tính tổng số lượng (Giữ nguyên logic của bạn)
                 {
                     $group: {
                         _id: {
                             sortKey,
                             displayDate,
-                            // 2. Trỏ thẳng vào loaiDon của Đơn Hàng. Dùng $ifNull để đề phòng các đơn cũ bị rỗng
-                            // 2. Dùng $regexMatch để chống mọi lỗi font/khoảng trắng
                             loaiDon: {
                                 $switch: {
                                     branches: [
