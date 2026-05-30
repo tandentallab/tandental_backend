@@ -9,28 +9,26 @@ const {
   applyBangGiaTemplate
 } = require("../controllers/bangGiaController");
 
-const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
-
-const allowAdminOnly = authorizeRoles(APP_ROLES.ADMIN);
+const { verifyToken, checkPermission } = require("../middleware/authMiddleware");
 
 /* ================= ROUTES ================= */
 
 // lấy tất cả bảng giá từ tất cả nha khoa
-router.get("/", verifyToken, allowAdminOnly, getAllBangGia);
+router.get("/", verifyToken, checkPermission, getAllBangGia);
 
 // lấy bảng giá theo nha khoa
-router.get("/nha-khoa/:nhaKhoaId", verifyToken, allowAdminOnly, getBangGiaByNhaKhoa);
+router.get("/nha-khoa/:nhaKhoaId", verifyToken, checkPermission, getBangGiaByNhaKhoa);
 
 // tạo / cập nhật giá
-router.post("/", verifyToken, allowAdminOnly, upsertBangGia);
+router.post("/", verifyToken, checkPermission, upsertBangGia);
 
 // xóa (reset về giá chung)
-router.delete("/:id", verifyToken, allowAdminOnly, deleteBangGia);
+router.delete("/:id", verifyToken, checkPermission, deleteBangGia);
 
 router.post(
   "/apply-template",
   verifyToken,
-  allowAdminOnly,
+  checkPermission,
   applyBangGiaTemplate
 );
 
