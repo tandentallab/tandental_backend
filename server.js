@@ -29,7 +29,6 @@ const bangLuongRoutes = require("./routes/bangLuongRoutes");
 const searchRoutes = require("./routes/searchRoutes");
 const activityLogRoutes = require("./routes/activityLogRoutes");
 
-
 const app = express();
 
 app.use(cors({
