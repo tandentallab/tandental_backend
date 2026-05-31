@@ -176,7 +176,7 @@ exports.getAllDonHang = async (req, res) => {
                 .skip(skip)
                 .limit(limitNum),
             DonHang.countDocuments(filter),
-            DonHang.aggregate([{ $group: { _id: "$trangThai", count: { $sum: 1 } } }]),
+            DonHang.aggregate([{ $match: filter }, { $group: { _id: "$trangThai", count: { $sum: 1 } } }]),
             DonHang.countDocuments({ henGiao: { $lt: now }, trangThai: { $nin: ["Hoàn thành", "Đã giao"] } }),
         ]);
 
