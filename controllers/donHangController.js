@@ -11,6 +11,23 @@ const buildOrderCodePrefix = (date = new Date()) => {
     return `TAN${yy}${mm}`;
 };
 
+// Tự động xác định trạng thái dựa trên yêu cầu thử:
+// - Có ít nhất 1 sản phẩm với yeuCauThu không rỗng → "Đang thử"
+// - Không còn yeuCauThu và trước đó là "Đang thử" → "Chờ xử lý"
+// - Trạng thái "Hoàn thành" / "Đã giao" không bị ghi đè
+const resolveTrangThaiTuYeuCauThu = (danhSachSanPham, currentTrangThai) => {
+    if (currentTrangThai === "Hoàn thành" || currentTrangThai === "Đã giao") {
+        return currentTrangThai;
+    }
+    const hasYeuCauThu = (danhSachSanPham || []).some(
+        (sp) => Array.isArray(sp.yeuCauThu) && sp.yeuCauThu.length > 0
+    );
+    if (hasYeuCauThu) return "Đang thử";
+    // Không còn yêu cầu thử → về "Chờ xử lý"
+    if (currentTrangThai === "Đang thử") return "Chờ xử lý";
+    return currentTrangThai;
+};
+
 const generateMaDonHang = async () => {
     const prefix = buildOrderCodePrefix();
     const regex = new RegExp(`^${prefix}\\d{4}$`);
@@ -50,10 +67,12 @@ exports.createDonHang = async (req, res) => {
 
         while (retry < 3) {
             try {
+                const autoTrangThai = resolveTrangThaiTuYeuCauThu(danhSachSanPham, req.body.trangThai || "Chờ xử lý");
                 const newDonHang = new DonHang({
                     ...req.body,
                     danhSachSanPham, // Chỉ lưu thông tin sản xuất, chưa snapshot giá
                     maDonHang,
+                    trangThai: autoTrangThai,
                     nhatKyChinhSua: [{
                         nguoiThuc: req.body.nguoiThucDuyet || "Điều Phối",
                         hanhDong: "Tạo đơn hàng",
@@ -441,6 +460,12 @@ exports.updateDonHang = async (req, res) => {
         // Xây dựng mô tả chi tiết những gì đã thay đổi
         const chiTietThayDoi = await buildChinhSuaLog(donHangHienTai, updateData);
 
+        // Nếu cập nhật danh sách sản phẩm → tự động xác định trạng thái "Đang thử"
+        if ("danhSachSanPham" in updateData) {
+            const baseTrangThai = updateData.trangThai || donHangHienTai.trangThai;
+            updateData.trangThai = resolveTrangThaiTuYeuCauThu(updateData.danhSachSanPham, baseTrangThai);
+        }
+
         const updateOp = { $set: updateData };
         if (nhatKyLogEntry) {
             updateOp.$push = {
@@ -547,11 +572,9 @@ exports.getThongKe = async (req, res) => {
                 trangThai: { $nin: ["Hoàn thành", "Đã giao"] },
             }),
 
-            // 3. Đơn có ít nhất 1 sản phẩm yêu cầu thử (yeuCauThu không rỗng)
+            // 3. Đơn đang ở trạng thái "Đang thử"
             DonHang.countDocuments({
-                "danhSachSanPham.yeuCauThu": { $exists: true },
-                "danhSachSanPham.yeuCauThu.0": { $exists: true },
-                trangThai: { $nin: ["Hoàn thành", "Đã giao"] },
+                trangThai: "Đang thử",
             }),
         ]);
 

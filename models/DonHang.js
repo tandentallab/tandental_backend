@@ -129,7 +129,7 @@ const donHangSchema = new mongoose.Schema(
         // Trạng thái đơn hàng (để quản lý luồng về sau)
         trangThai: {
             type: String,
-            enum: ["Chờ xử lý", "Đang sản xuất", "Hoàn thành", "Đã giao"],
+            enum: ["Chờ xử lý", "Đang sản xuất", "Đang thử", "Hoàn thành", "Đã giao"],
             default: "Chờ xử lý",
         },
         daXuatHoaDon: {
