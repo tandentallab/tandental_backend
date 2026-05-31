@@ -522,3 +522,52 @@ exports.deleteDonHang = async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 };
+
+// [GET] Thống kê tổng quan
+exports.getThongKe = async (req, res) => {
+    try {
+        const now = new Date();
+
+        // Đầu ngày hôm nay (00:00:00) và cuối ngày (23:59:59) theo UTC+7
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+
+        const endOfToday = new Date(now);
+        endOfToday.setHours(23, 59, 59, 999);
+
+        const [giaoHomNay, treHenGiao, guiThu] = await Promise.all([
+            // 1. Đơn có henGiao rơi vào hôm nay (bất kể trạng thái)
+            DonHang.countDocuments({
+                henGiao: { $gte: startOfToday, $lte: endOfToday },
+            }),
+
+            // 2. Đơn trễ hẹn giao: henGiao đã qua nhưng chưa hoàn thành / chưa giao
+            DonHang.countDocuments({
+                henGiao: { $lt: startOfToday },
+                trangThai: { $nin: ["Hoàn thành", "Đã giao"] },
+            }),
+
+            // 3. Đơn có ít nhất 1 sản phẩm yêu cầu thử (yeuCauThu không rỗng)
+            DonHang.countDocuments({
+                "danhSachSanPham.yeuCauThu": { $exists: true },
+                "danhSachSanPham.yeuCauThu.0": { $exists: true },
+                trangThai: { $nin: ["Hoàn thành", "Đã giao"] },
+            }),
+        ]);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                giaoHomNay,   // Số đơn hẹn giao hôm nay
+                treHenGiao,   // Số đơn trễ hẹn giao (chưa hoàn thành)
+                guiThu,       // Số đơn đang có yêu cầu thử (chưa hoàn thành)
+            },
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Lỗi khi lấy thống kê",
+            error: error.message,
+        });
+    }
+};
