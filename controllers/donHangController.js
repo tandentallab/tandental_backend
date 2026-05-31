@@ -11,6 +11,23 @@ const buildOrderCodePrefix = (date = new Date()) => {
     return `TAN${yy}${mm}`;
 };
 
+// Tự động xác định trạng thái dựa trên yêu cầu thử:
+// - Có ít nhất 1 sản phẩm với yeuCauThu không rỗng → "Đang thử"
+// - Không còn yeuCauThu và trước đó là "Đang thử" → "Chờ xử lý"
+// - Trạng thái "Hoàn thành" / "Đã giao" không bị ghi đè
+const resolveTrangThaiTuYeuCauThu = (danhSachSanPham, currentTrangThai) => {
+    if (currentTrangThai === "Hoàn thành" || currentTrangThai === "Đã giao") {
+        return currentTrangThai;
+    }
+    const hasYeuCauThu = (danhSachSanPham || []).some(
+        (sp) => Array.isArray(sp.yeuCauThu) && sp.yeuCauThu.length > 0
+    );
+    if (hasYeuCauThu) return "Đang thử";
+    // Không còn yêu cầu thử → về "Chờ xử lý"
+    if (currentTrangThai === "Đang thử") return "Chờ xử lý";
+    return currentTrangThai;
+};
+
 const generateMaDonHang = async () => {
     const prefix = buildOrderCodePrefix();
     const regex = new RegExp(`^${prefix}\\d{4}$`);
@@ -50,10 +67,12 @@ exports.createDonHang = async (req, res) => {
 
         while (retry < 3) {
             try {
+                const autoTrangThai = resolveTrangThaiTuYeuCauThu(danhSachSanPham, req.body.trangThai || "Chờ xử lý");
                 const newDonHang = new DonHang({
                     ...req.body,
                     danhSachSanPham, // Chỉ lưu thông tin sản xuất, chưa snapshot giá
                     maDonHang,
+                    trangThai: autoTrangThai,
                     nhatKyChinhSua: [{
                         nguoiThuc: req.body.nguoiThucDuyet || "Điều Phối",
                         hanhDong: "Tạo đơn hàng",
@@ -441,6 +460,12 @@ exports.updateDonHang = async (req, res) => {
         // Xây dựng mô tả chi tiết những gì đã thay đổi
         const chiTietThayDoi = await buildChinhSuaLog(donHangHienTai, updateData);
 
+        // Nếu cập nhật danh sách sản phẩm → tự động xác định trạng thái "Đang thử"
+        if ("danhSachSanPham" in updateData) {
+            const baseTrangThai = updateData.trangThai || donHangHienTai.trangThai;
+            updateData.trangThai = resolveTrangThaiTuYeuCauThu(updateData.danhSachSanPham, baseTrangThai);
+        }
+
         const updateOp = { $set: updateData };
         if (nhatKyLogEntry) {
             updateOp.$push = {
@@ -520,5 +545,52 @@ exports.deleteDonHang = async (req, res) => {
         res.status(200).json({ success: true, message: "Xóa đơn hàng thành công" });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// [GET] Thống kê tổng quan
+exports.getThongKe = async (req, res) => {
+    try {
+        const now = new Date();
+
+        // Đầu ngày hôm nay (00:00:00) và cuối ngày (23:59:59) theo UTC+7
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+
+        const endOfToday = new Date(now);
+        endOfToday.setHours(23, 59, 59, 999);
+
+        const [giaoHomNay, treHenGiao, guiThu] = await Promise.all([
+            // 1. Đơn có henGiao rơi vào hôm nay (bất kể trạng thái)
+            DonHang.countDocuments({
+                henGiao: { $gte: startOfToday, $lte: endOfToday },
+            }),
+
+            // 2. Đơn trễ hẹn giao: henGiao đã qua nhưng chưa hoàn thành / chưa giao
+            DonHang.countDocuments({
+                henGiao: { $lt: startOfToday },
+                trangThai: { $nin: ["Hoàn thành", "Đã giao"] },
+            }),
+
+            // 3. Đơn đang ở trạng thái "Đang thử"
+            DonHang.countDocuments({
+                trangThai: "Đang thử",
+            }),
+        ]);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                giaoHomNay,   // Số đơn hẹn giao hôm nay
+                treHenGiao,   // Số đơn trễ hẹn giao (chưa hoàn thành)
+                guiThu,       // Số đơn đang có yêu cầu thử (chưa hoàn thành)
+            },
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Lỗi khi lấy thống kê",
+            error: error.message,
+        });
     }
 };
