@@ -45,6 +45,25 @@ exports.createPhieuBaoHanh = async (req, res) => {
       return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
     }
 
+    // Xử lý phiếu bảo hành mồ côi (tránh lỗi E11000 trùng mã bảo hành khi đơn hàng cũ đã bị xóa)
+    const maBaoHanhTarget = donHangRecord.maDonHang;
+    if (maBaoHanhTarget) {
+      const phieuTrungMa = await PhieuBaoHanh.findOne({ maBaoHanh: maBaoHanhTarget });
+      if (phieuTrungMa && phieuTrungMa.donHang?.toString() !== donHang) {
+        const oldOrderExists = await DonHang.findById(phieuTrungMa.donHang);
+        if (!oldOrderExists) {
+          // Đơn hàng cũ không còn tồn tại -> Xóa phiếu bảo hành mồ côi này đi
+          await PhieuBaoHanh.findByIdAndDelete(phieuTrungMa._id);
+        } else {
+          // Đơn hàng cũ vẫn tồn tại -> Trùng mã thực tế, báo lỗi cho Client
+          return res.status(400).json({
+            success: false,
+            message: `Mã bảo hành ${maBaoHanhTarget} đã được sử dụng cho một đơn hàng khác.`
+          });
+        }
+      }
+    }
+
     const nhaKhoaRecord = donHangRecord.nhaKhoa
       ? await NhaKhoa.findById(donHangRecord.nhaKhoa).select("hoVaTen tenGiaoDich soDienThoai")
       : null;
@@ -56,6 +75,7 @@ exports.createPhieuBaoHanh = async (req, res) => {
         viTriRang: item.viTriRang || "",
         soLuong: Number(item.soLuong) || 1,
         mau: item.mau || "",
+        tenSanPhamBaoHanh: item.tenSanPhamBaoHanh || "",
         baoHanhTu: item.baoHanhTu,
         baoHanhDen: item.baoHanhDen,
       }));
@@ -143,7 +163,47 @@ exports.createPhieuBaoHanh = async (req, res) => {
 // [GET] Lấy tất cả phiếu bảo hành
 exports.getAllPhieuBaoHanh = async (req, res) => {
   try {
-    const phieus = await PhieuBaoHanh.find()
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    const search = req.query.search || "";
+    const nhaKhoaId = req.query.nhaKhoaId;
+    const fromDate = req.query.fromDate;
+    const toDate = req.query.toDate;
+
+    let query = {};
+    
+    if (nhaKhoaId && nhaKhoaId !== "all") {
+      query.nhaKhoa = nhaKhoaId;
+    }
+
+    if (fromDate || toDate) {
+      query.createdAt = {};
+      if (fromDate) query.createdAt.$gte = new Date(fromDate);
+      if (toDate) query.createdAt.$lte = new Date(toDate);
+    }
+    if (search && search.trim() !== "") {
+      const keyword = search.trim();
+      
+      // Tìm trước ID của Đơn hàng và Bệnh nhân khớp với keyword
+      const [donHangs, benhNhans] = await Promise.all([
+        DonHang.find({ maDonHang: { $regex: keyword, $options: "i" } }).select("_id"),
+        require("../models/BenhNhan").find({ hoVaTen: { $regex: keyword, $options: "i" } }).select("_id"),
+      ]);
+
+      const donHangIds = donHangs.map(d => d._id);
+      const benhNhanIds = benhNhans.map(b => b._id);
+
+      query.$or = [
+        { maBaoHanh: { $regex: keyword, $options: "i" } },
+        { donHang: { $in: donHangIds } },
+        { benhNhan: { $in: benhNhanIds } }
+      ];
+    }
+
+    const total = await PhieuBaoHanh.countDocuments(query);
+
+    const phieus = await PhieuBaoHanh.find(query)
       .populate({
         path: "donHang",
         select: "_id maDonHang ngayNhan",
@@ -164,10 +224,15 @@ exports.getAllPhieuBaoHanh = async (req, res) => {
         path: "danhSachBaoHanh.sanPham",
         select: "tenSanPham",
       })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     res.status(200).json({
       success: true,
+      total,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
       count: phieus.length,
       data: phieus,
     });

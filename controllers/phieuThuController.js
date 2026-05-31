@@ -110,147 +110,202 @@ exports.getAllPhieuThu = async (req, res) => {
   }
 };
 
-/* ================= TẠO PHIẾU THU ================= */
+/* ================= TẠO PHIẾU THU (THÁC NƯỚC CHUẨN) ================= */
+/* ================= TẠO PHIẾU THU (TÔN TRỌNG PHÂN BỔ THỰC TẾ) ================= */
 exports.createPhieuThu = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
-    const {
-      danhSachHoaDon, // [{ hoaDon: id, soTienThanhToan: number }, ...]
-      ngayThu,
-      noiDung,
-      phuongThucThanhToan,
-    } = req.body;
+    let phieuThuOutput;
 
-    if (!danhSachHoaDon || !danhSachHoaDon.length) {
-      return res.status(400).json({ success: false, message: "Vui lòng chọn ít nhất một hóa đơn" });
-    }
+    await session.withTransaction(async () => {
+      // 🔥 BƯỚC 1: Bốc thêm mảng danhSachHoaDon do Frontend phân bổ gửi lên
+      const { nhaKhoaId, soTienThu, ngayThu, noiDung, phuongThucThanhToan, danhSachHoaDon } = req.body;
 
-    let tongTienThu = 0;
-    let tongConThua = 0;
-    let tongDuocKhauTru = 0;
-    const danhSachLuu = [];
-
-    // Cập nhật từng hóa đơn
-    for (const item of danhSachHoaDon) {
-      const hd = await HoaDon.findById(item.hoaDon);
-      if (!hd) continue;
-
-      // Snapshot trước khi thay đổi
-      const giaTriHoaDon = hd.giaTriThanhToan || 0;
-      const daTTruocLanNay = hd.daThanhToan || 0;
-      const conLaiTruocLanNay = hd.conLai || 0;
-
-      let soTien = Number(item.soTienThanhToan) || 0;
-      let conThua = 0;
-      if (soTien > hd.conLai) {
-        conThua = soTien - hd.conLai;
-        soTien = hd.conLai;
+      if (!nhaKhoaId || !soTienThu || Number(soTienThu) <= 0) {
+        throw new Error("Thông tin thanh toán không hợp lệ");
       }
 
-      hd.daThanhToan += soTien;
-      hd.conLai -= soTien;
-      if (hd.conLai <= 0) {
-        hd.conLai = 0;
-        hd.trangThai = "Đã thanh toán";
-      } else if (hd.daThanhToan > 0) {
-        hd.trangThai = "Thanh toán một phần";
-      } else {
-        hd.trangThai = "Chưa thanh toán";
+      if (!danhSachHoaDon || !danhSachHoaDon.length) {
+        throw new Error("Danh sách hóa đơn phân bổ thanh toán không được trống");
       }
-      await hd.save();
 
-      tongTienThu += soTien;
-      tongConThua += conThua;
-      tongDuocKhauTru += soTien;
-      danhSachLuu.push({
-        hoaDon: item.hoaDon,
-        soTienThanhToan: soTien,
-        giaTriHoaDon,
-        daTTruocLanNay,
-        conLaiTruocLanNay,
+      let tongTienThuThucTe = Number(soTienThu);
+      const danhSachLuu = [];
+
+      const nhaKhoa = await mongoose.model("NhaKhoa").findById(nhaKhoaId).session(session);
+      if (!nhaKhoa) throw new Error("Không tìm thấy Nha khoa");
+
+      // 🔥 BƯỚC 2: DUYỆT THEO MẢNG PHÂN BỔ THỰC TẾ, KHÔNG CHƠI THÁC NƯỚC TỰ ĐỘNG NỮA
+      for (const item of danhSachHoaDon) {
+        const hdId = item.hoaDon;
+        const tienTraChoHdNay = Number(item.soTienThanhToan || 0);
+
+        // Nếu dòng hóa đơn này không được chia đồng nào thì bỏ qua
+        if (tienTraChoHdNay <= 0) continue;
+
+        // Tìm chính xác hóa đơn được chỉ định
+        const hd = await HoaDon.findById(hdId).session(session);
+        if (!hd) {
+          throw new Error(`Không tìm thấy hóa đơn có ID: ${hdId}`);
+        }
+
+        const snapshotGiaTri = hd.giaTriThanhToan || 0;
+        const snapshotDaTTruoc = hd.daThanhToan || 0;
+        const snapshotConLaiTruoc = hd.conLai || 0;
+
+        // Lưu đúng số tiền kế toán gõ tay ở dòng này
+        hd.daThanhToan += tienTraChoHdNay;
+        hd.conLai = Math.max(0, hd.giaTriThanhToan - hd.daThanhToan); // Tính dựa trên gốc giaTriThanhToan để triệt tiêu lệch số
+
+        if (hd.conLai <= 0) hd.trangThai = "Đã thanh toán";
+        else if (hd.daThanhToan > 0) hd.trangThai = "Thanh toán một phần";
+
+        if (hd.congNoCuoiKy !== undefined) {
+          hd.congNoCuoiKy = Math.max(0, (hd.congNoCuoiKy || 0) - tienTraChoHdNay);
+        }
+
+        await hd.save({ session });
+
+        // Đẩy vào danh sách chi tiết của phiếu thu
+        danhSachLuu.push({
+          hoaDon: hd._id,
+          soTienThanhToan: tienTraChoHdNay,
+          giaTriHoaDon: snapshotGiaTri,
+          daTTruocLanNay: snapshotDaTTruoc,
+          conLaiTruocLanNay: snapshotConLaiTruoc,
+        });
+      }
+
+      // Tính toán phần thừa thiếu dựa trên mảng thực tế đã lưu
+      const tongKhauTruThucTe = danhSachLuu.reduce((sum, x) => sum + x.soTienThanhToan, 0);
+      const conThua = Math.max(0, tongTienThuThucTe - tongKhauTruThucTe);
+
+      const ngayThuDate = new Date(ngayThu || Date.now());
+      const yy = String(ngayThuDate.getFullYear()).slice(-2);
+      const mm = String(ngayThuDate.getMonth() + 1).padStart(2, "0");
+      const prefix = `TAN${yy}${mm}`;
+
+      const count = await PhieuThu.countDocuments({ soPhieuThu: { $regex: `^${prefix}` } }).session(session);
+      const soPhieuThu = `${prefix}${String(count + 1).padStart(4, "0")}`;
+
+      const newPhieuThu = new PhieuThu({
+        soPhieuThu,
+        danhSachHoaDon: danhSachLuu,
+        nguoiTao: req.user?.id || req.user?._id || undefined,
+        ngayThu: ngayThuDate,
+        soTienThu: tongTienThuThucTe,
+        duocKhauTru: tongKhauTruThucTe, // Số tiền thực tế phân bổ vào các bill
+        conThua: conThua,
+        noiDung,
+        phuongThucThanhToan,
       });
-    }
 
-    // Generate soPhieuThu
-    const ngayThuDate = new Date(ngayThu || Date.now());
-    const yy = String(ngayThuDate.getFullYear()).slice(-2);
-    const mm = String(ngayThuDate.getMonth() + 1).padStart(2, "0");
-    const prefix = `TAN${yy}${mm}`;
-    const count = await PhieuThu.countDocuments({ soPhieuThu: { $regex: `^${prefix}` } });
-    const soPhieuThu = `${prefix}${String(count + 1).padStart(4, "0")}`;
-
-    const phieuThu = await PhieuThu.create({
-      soPhieuThu,
-      danhSachHoaDon: danhSachLuu,
-      nguoiTao: req.user?.id || req.user?._id || null,
-      ngayThu,
-      soTienThu: tongTienThu + tongConThua, // giữ tổng người nộp (kể cả thừa)
-      duocKhauTru: tongDuocKhauTru,
-      conThua: tongConThua,
-      noiDung,
-      phuongThucThanhToan,
+      await newPhieuThu.save({ session });
+      phieuThuOutput = newPhieuThu;
     });
 
-    res.json({ success: true, data: phieuThu });
+    res.json({ success: true, data: phieuThuOutput });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("🚨 CHI TIẾT LỖI TẠO PHIẾU THU:", err);
+    res.status(500).json({ success: false, message: err.message });
+  } finally {
+    session.endSession();
   }
 };
 
-/* ================= CẬP NHẬT PHIẾU THU ================= */
 exports.updatePhieuThu = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
-    const { id } = req.params;
-    const { ngayThu, phuongThucThanhToan, noiDung, soTienThu } = req.body;
+    let updatedPhieu;
+    await session.withTransaction(async () => {
+      const { id } = req.params;
+      const { ngayThu, phuongThucThanhToan, noiDung, danhSachHoaDon } = req.body;
 
-    const phieuThu = await PhieuThu.findById(id);
-    if (!phieuThu) {
-      return res.status(404).json({ success: false, message: "Không tìm thấy phiếu thu" });
-    }
+      const phieuThu = await PhieuThu.findById(id).session(session);
+      if (!phieuThu) throw new Error("Không tìm thấy phiếu thu");
 
-    if (ngayThu !== undefined) phieuThu.ngayThu = ngayThu;
-    if (phuongThucThanhToan !== undefined) phieuThu.phuongThucThanhToan = phuongThucThanhToan;
-    if (noiDung !== undefined) phieuThu.noiDung = noiDung;
+      // 1. Cập nhật các thông tin cơ bản
+      if (ngayThu !== undefined) phieuThu.ngayThu = ngayThu;
+      if (phuongThucThanhToan !== undefined) phieuThu.phuongThucThanhToan = phuongThucThanhToan;
+      if (noiDung !== undefined) phieuThu.noiDung = noiDung;
 
-    if (soTienThu !== undefined && Number(soTienThu) !== phieuThu.soTienThu) {
-      const newTotal = Number(soTienThu);
-      let remaining = newTotal;
-      let tongKhauTru = 0;
+      // 2. Kế toán phân bổ lại tiền cho từng hóa đơn
+      if (danhSachHoaDon && Array.isArray(danhSachHoaDon)) {
 
-      for (let i = 0; i < phieuThu.danhSachHoaDon.length; i++) {
-        const item = phieuThu.danhSachHoaDon[i];
-        const hd = await HoaDon.findById(item.hoaDon);
-        if (!hd) continue;
+        // BƯỚC A: HOÀN TÁC TOÀN BỘ TIỀN CỦA PHIẾU THU CŨ
+        for (const item of phieuThu.danhSachHoaDon) {
+          const hd = await HoaDon.findById(item.hoaDon).session(session);
+          if (hd) {
+            hd.daThanhToan = Math.max(0, (hd.daThanhToan || 0) - (item.soTienThanhToan || 0));
+            hd.conLai = Math.round((hd.giaTriThanhToan || 0) - hd.daThanhToan);
 
-        const maxForThisHD = item.conLaiTruocLanNay || 0;
-        const newPay = Math.min(remaining, maxForThisHD);
-        remaining = Math.max(0, remaining - newPay);
-        tongKhauTru += newPay;
+            if (hd.conLai <= 0) hd.trangThai = "Đã thanh toán";
+            else if (hd.daThanhToan > 0) hd.trangThai = "Thanh toán một phần";
+            else hd.trangThai = "Chưa thanh toán";
 
-        hd.daThanhToan = (item.daTTruocLanNay || 0) + newPay;
-        hd.conLai = Math.max(0, (item.conLaiTruocLanNay || 0) - newPay);
-
-        if (hd.conLai <= 0) {
-          hd.trangThai = "Đã thanh toán";
-        } else if (hd.daThanhToan > 0) {
-          hd.trangThai = "Thanh toán một phần";
-        } else {
-          hd.trangThai = "Chưa thanh toán";
+            await hd.save({ session });
+          }
         }
-        await hd.save();
 
-        phieuThu.danhSachHoaDon[i].soTienThanhToan = newPay;
+        // BƯỚC B: ÁP DỤNG MỨC TIỀN MỚI CHO TỪNG HÓA ĐƠN
+        let newTotal = 0;
+        const danhSachLuuMoi = [];
+
+        for (const item of danhSachHoaDon) {
+          const hdId = item.hoaDon;
+          const tienTra = Number(item.soTienThanhToan || 0);
+
+          // Nếu kế toán sửa về 0đ thì bỏ qua hóa đơn này
+          if (tienTra <= 0) continue;
+
+          const hd = await HoaDon.findById(hdId).session(session);
+          if (!hd) throw new Error(`Không tìm thấy hóa đơn: ${hdId}`);
+
+          // Chặn bảo mật: Không cho phép rót tiền lố số nợ của Hóa đơn
+          if (tienTra > hd.conLai) {
+            throw new Error(`Hóa đơn ${hd.soHoaDon} chỉ còn nợ ${hd.conLai}, bạn không thể thanh toán ${tienTra}.`);
+          }
+
+          const snapshotGiaTri = hd.giaTriThanhToan || 0;
+          const snapshotDaTTruoc = hd.daThanhToan || 0;
+          const snapshotConLaiTruoc = hd.conLai || 0;
+
+          // Rót tiền mới vào
+          hd.daThanhToan += tienTra;
+          hd.conLai = Math.max(0, hd.giaTriThanhToan - hd.daThanhToan);
+
+          if (hd.conLai <= 0) hd.trangThai = "Đã thanh toán";
+          else if (hd.daThanhToan > 0) hd.trangThai = "Thanh toán một phần";
+
+          await hd.save({ session });
+
+          newTotal += tienTra;
+          danhSachLuuMoi.push({
+            hoaDon: hd._id,
+            soTienThanhToan: tienTra,
+            giaTriHoaDon: snapshotGiaTri,
+            daTTruocLanNay: snapshotDaTTruoc,
+            conLaiTruocLanNay: snapshotConLaiTruoc,
+          });
+        }
+
+        // BƯỚC C: CHỐT TỔNG PHIẾU THU
+        phieuThu.danhSachHoaDon = danhSachLuuMoi;
+        phieuThu.soTienThu = newTotal;
+        phieuThu.duocKhauTru = newTotal; // Số tiền rót thực tế
+        phieuThu.conThua = 0; // Kế toán gõ đích danh từng HĐ nên vĩnh viễn không có tiền thừa
       }
 
-      phieuThu.soTienThu = newTotal;
-      phieuThu.duocKhauTru = tongKhauTru;
-      phieuThu.conThua = Math.max(0, newTotal - tongKhauTru);
-      phieuThu.markModified("danhSachHoaDon");
-    }
+      await phieuThu.save({ session });
+      updatedPhieu = phieuThu;
+    });
 
-    await phieuThu.save();
-    res.json({ success: true, data: phieuThu });
+    res.json({ success: true, data: updatedPhieu });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    session.endSession();
   }
 };
 

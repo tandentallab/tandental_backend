@@ -13,12 +13,17 @@ const phieuThuSchema = new mongoose.Schema(
       {
         hoaDon: { type: mongoose.Schema.Types.ObjectId, ref: "HoaDon" },
         soTienThanhToan: { type: Number, default: 0 },
-        // Snapshot tại thời điểm lập phiếu thu
-        giaTriHoaDon: { type: Number, default: 0 },       // thanhTien lúc tạo
-        daTTruocLanNay: { type: Number, default: 0 },     // daThanhToan TRƯỚC lần này
-        conLaiTruocLanNay: { type: Number, default: 0 },  // conLai TRƯỚC lần này
+        giaTriHoaDon: { type: Number, default: 0 },
+        daTTruocLanNay: { type: Number, default: 0 },
+        conLaiTruocLanNay: { type: Number, default: 0 },
       },
     ],
+
+    // 🔥 TRƯỜNG QUAN TRỌNG: Lưu số tiền đã trừ vào nợ migrate
+    tienTruVaoMigrate: {
+      type: Number,
+      default: 0
+    },
 
     nguoiTao: {
       type: mongoose.Schema.Types.ObjectId,
@@ -30,25 +35,18 @@ const phieuThuSchema = new mongoose.Schema(
       required: true,
     },
 
-    ngayTao: {
-      type: Date,
-      default: Date.now,
-    },
-
     soTienThu: {
       type: Number,
       required: true,
       min: 0,
     },
 
-    // 🔥 TIỀN TRỪ VÀO HÓA ĐƠN
     duocKhauTru: {
       type: Number,
       default: 0,
       min: 0,
     },
 
-    // 🔥 TIỀN THỪA (nếu trả quá)
     conThua: {
       type: Number,
       default: 0,
@@ -65,10 +63,9 @@ const phieuThuSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-phieuThuSchema.pre("save", async function () {
-  if (!this.isNew || this.soPhieuThu) {
-    return;
-  }
+// Tự động tạo mã phiếu thu
+phieuThuSchema.pre("save", async function (next) {
+  if (this.soPhieuThu) return;
 
   const now = new Date();
   const yy = now.getFullYear().toString().slice(-2);
@@ -78,10 +75,9 @@ phieuThuSchema.pre("save", async function () {
   const lastPhieuThu = await mongoose
     .model("PhieuThu")
     .findOne({ soPhieuThu: { $regex: `^${prefix}` } })
-    .sort({ soPhieuThu: -1 })
-    .select("soPhieuThu");
+    .sort({ soPhieuThu: -1 });
 
-  let nextNumber = 0;
+  let nextNumber = 1; // Bắt đầu từ 0001
   if (lastPhieuThu?.soPhieuThu) {
     const lastNumber = parseInt(lastPhieuThu.soPhieuThu.slice(-4), 10);
     if (Number.isFinite(lastNumber)) {

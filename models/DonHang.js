@@ -10,7 +10,6 @@ const donHangSchema = new mongoose.Schema(
         bacSi: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "NguoiLienHe",
-            required: [true, "Vui lòng chọn Bác sĩ"],
         },
         benhNhan: {
             type: mongoose.Schema.Types.ObjectId,

@@ -18,6 +18,7 @@ router.get(
   "/chua-thanh-toan/:nhaKhoaId",
   hoaDonController.getHoaDonChuaThanhToanByNhaKhoa
 );
+
 router.get(
   "/thong-ke-cong-no",
   hoaDonController.thongKeCongNoHoaDon
@@ -34,9 +35,10 @@ router.get("/ngay-gan-nhat-all", hoaDonController.getNgayXuatHoaDonGanNhatAll);
 // Lấy danh sách hóa đơn theo nha khoa
 router.get("/nha-khoa/:nhaKhoaId", hoaDonController.getAllHoaDon);
 
+
 router.get("/:id", hoaDonController.getHoaDonById);
 
-// Lấy đơn hàng chưa xuất hóa đơn
+// Lấy đơn hàng chưa xuất hóa đơn (Hỗ trợ lọc theo tuNgay và denNgay qua query)
 router.get(
   "/don-hang-chua-xuat/:nhaKhoaId",
   hoaDonController.getDonHangChuaXuatHoaDon
@@ -49,7 +51,7 @@ router.put("/:id", hoaDonController.updateHoaDon);
 // Thanh toán hóa đơn (partial payment)
 router.post("/:id/thanh-toan", hoaDonController.thanhToanHoaDon);
 
-router.delete("/:id", hoaDonController.deleteHoaDon)
+router.delete("/:id", hoaDonController.deleteHoaDon);
 
 
 module.exports = router;

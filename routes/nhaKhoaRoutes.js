@@ -6,16 +6,14 @@ const {
   getAllNhaKhoa,
   updateNhaKhoa,
   updateSoDuDauKy,
+  upsertGhiChu
 } = require("../controllers/nhaKhoaController");
 
-const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
+const { verifyToken, checkPermission } = require("../middleware/authMiddleware");
 
-const allowAdminAndNhanVien = authorizeRoles(APP_ROLES.ADMIN, APP_ROLES.NHAN_VIEN);
-
-router.post("/", verifyToken, allowAdminAndNhanVien, createNhaKhoa);
-router.get("/", verifyToken, allowAdminAndNhanVien, getAllNhaKhoa);
+router.post("/", verifyToken, checkPermission, createNhaKhoa);
+router.get("/", verifyToken, checkPermission, getAllNhaKhoa);
 router.put('/:id/so-du-dau-ky', updateSoDuDauKy);
-router.put("/:id", verifyToken, allowAdminAndNhanVien, updateNhaKhoa)
-
+router.put("/:id", verifyToken, checkPermission, updateNhaKhoa)
 
 module.exports = router;

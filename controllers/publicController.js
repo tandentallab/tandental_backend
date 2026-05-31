@@ -9,11 +9,12 @@ const buildPublicPhieuBaoHanh = (phieu) => {
     const daysRemaining = Math.ceil((baoHanhDen - today) / (1000 * 60 * 60 * 24));
 
     return {
-      tenSanPham: item.sanPham?.tenSanPham || "---",
+      tenSanPham: item.tenSanPhamBaoHanh || item.sanPham?.tenSanPham || "---",
+      tenSanPhamBaoHanh: item.tenSanPhamBaoHanh || "",
       sanPham: item.sanPham
         ? {
-            ten: item.sanPham.tenSanPham,
-            tenSanPham: item.sanPham.tenSanPham,
+            ten: item.tenSanPhamBaoHanh || item.sanPham.tenSanPham,
+            tenSanPham: item.tenSanPhamBaoHanh || item.sanPham.tenSanPham,
           }
         : null,
       viTriRang: item.viTriRang || "---",

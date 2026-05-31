@@ -12,11 +12,20 @@ const nhaKhoaSchema = new mongoose.Schema(
     quanHuyen: String,
     diaChiCuThe: String,
     moTa: String,
-    soDuDauKy: {
-      thang: { type: Number, default: null },
-      nam: { type: Number, default: null },
-      soTien: { type: Number, default: 0 },
-    },
+    soDuDauKy: [
+      {
+        thang: { type: Number, required: true },
+        nam: { type: Number, required: true },
+        soTien: { type: Number, default: 0 },
+      }
+    ],
+    ghiChuThang: [
+      {
+        thang: { type: Number, required: true },
+        nam: { type: Number, required: true },
+        noiDung: { type: String, default: '' },
+      }
+    ],
   },
   { timestamps: true }
 );
