@@ -1,7 +1,7 @@
 const express = require("express");
 
 const router = express.Router();
-const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
+const { verifyToken, checkPermission } = require("../middleware/authMiddleware");
 
 const {
   createNhanVien,
@@ -15,23 +15,15 @@ const {
 
 const uploadCCCDMiddleware = require("../middleware/uploadCCCD");
 
+router.post("/", verifyToken, checkPermission, createNhanVien);
 
-const allowAdminAndKeToan = authorizeRoles(APP_ROLES.ADMIN, APP_ROLES.KE_TOAN);
-const allowAllBusinessRoles = authorizeRoles(
-  APP_ROLES.ADMIN,
-  APP_ROLES.KE_TOAN,
-  APP_ROLES.NHAN_VIEN
-);
+router.get("/", verifyToken, checkPermission, getAllNhanVien);
 
-router.post("/", verifyToken, allowAdminAndKeToan, createNhanVien);
+router.get("/:id", verifyToken, checkPermission, getNhanVienById);
 
-router.get("/", verifyToken, allowAllBusinessRoles, getAllNhanVien);
+router.put("/:id", verifyToken, checkPermission, updateNhanVien);
 
-router.get("/:id", verifyToken, allowAllBusinessRoles, getNhanVienById);
-
-router.put("/:id", verifyToken, allowAdminAndKeToan, updateNhanVien);
-
-router.delete("/:id", verifyToken, allowAdminAndKeToan, deleteNhanVien);
+router.delete("/:id", verifyToken, checkPermission, deleteNhanVien);
 
 // upload nhiều ảnh
 router.post(
