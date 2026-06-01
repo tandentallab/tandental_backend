@@ -467,15 +467,22 @@ exports.getAllHoaDonAdmin = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
-    const { trangThai, search, nhaKhoaId, fromDate, toDate } = req.query;
+
+    // 🔥 1. Đón lấy loaiHan từ req.query
+    const { trangThai, search, nhaKhoaId, fromDate, toDate, loaiHan } = req.query;
 
     let query = {
       soHoaDon: { $not: /^SDDK/i }
     };
+
     const trangThaiQuery = buildTrangThaiQuery(trangThai);
     if (trangThaiQuery) query.trangThai = trangThaiQuery;
-    if (nhaKhoaId && mongoose.Types.ObjectId.isValid(nhaKhoaId)) query.nhaKhoa = nhaKhoaId;
 
+    if (nhaKhoaId && mongoose.Types.ObjectId.isValid(nhaKhoaId)) {
+      query.nhaKhoa = nhaKhoaId;
+    }
+
+    // --- LỌC THEO TỪ NGÀY / ĐẾN NGÀY ---
     if (fromDate || toDate) {
       query.ngayXuatHoaDon = {};
       if (fromDate) query.ngayXuatHoaDon.$gte = new Date(fromDate);
@@ -486,6 +493,31 @@ exports.getAllHoaDonAdmin = async (req, res) => {
       }
     }
 
+    // 🔥 LOGIC MỚI: LỌC NGẦM THEO THẺ THỐNG KÊ
+    if (loaiHan === "conNo" || loaiHan === "treHan" || loaiHan === "chuaDenHan") {
+
+      // 1. Ép cứng ngầm: Chỉ lấy các hóa đơn còn nợ (Không cần FE phải gửi lên)
+      query.trangThai = { $in: ["Chưa thanh toán", "Thanh toán một phần"] };
+
+      // 2. Lọc thêm ngày xuất hóa đơn nếu là Trễ hạn / Chưa đến hạn
+      if (loaiHan === "treHan" || loaiHan === "chuaDenHan") {
+        const moc20NgayTruoc = dayjs().tz(VN_TZ).subtract(20, 'day').endOf('day').toDate();
+        if (!query.ngayXuatHoaDon) query.ngayXuatHoaDon = {};
+
+        if (loaiHan === "treHan") {
+          query.ngayXuatHoaDon.$lt = moc20NgayTruoc;
+        } else if (loaiHan === "chuaDenHan") {
+          query.ngayXuatHoaDon.$gte = moc20NgayTruoc;
+        }
+      }
+
+    } else {
+      // Nếu KHÔNG bấm thẻ thống kê, thì mới cho phép dùng bộ lọc Trạng thái thủ công của Kế toán
+      const trangThaiQuery = buildTrangThaiQuery(trangThai);
+      if (trangThaiQuery) query.trangThai = trangThaiQuery;
+    }
+
+    // --- LỌC THEO TỪ KHÓA TÌM KIẾM ---
     if (search && search.trim() !== "") {
       const keyword = search.trim();
       query.$or = [
@@ -525,7 +557,6 @@ exports.getAllHoaDonAdmin = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
 // ================= LẤY HÓA ĐƠN THEO NHA KHOA =================
 exports.getAllHoaDon = async (req, res) => {
   try {
@@ -945,28 +976,10 @@ exports.thongKeCongNoHoaDon = async (req, res) => {
 
     const now = dayjs().tz(VN_TZ).valueOf();
 
-    const getNgayDenHan = (ngayXuatHoaDon, chinhSachThanhToan) => {
-      const baseDate = dayjs(ngayXuatHoaDon).tz(VN_TZ);
-
-      switch (chinhSachThanhToan) {
-        case "Thanh toán trước":
-        case "Thanh toán ngay":
-          return baseDate.endOf('day').valueOf();
-        case "Thanh toán trong 7 ngày":
-          return baseDate.add(7, 'day').endOf('day').valueOf();
-        case "Thanh toán trong 10 ngày":
-          return baseDate.add(10, 'day').endOf('day').valueOf();
-        case "Thanh toán trong 30 ngày":
-          return baseDate.add(30, 'day').endOf('day').valueOf();
-        case "Thanh toán trong 60 ngày":
-          return baseDate.add(60, 'day').endOf('day').valueOf();
-        case "Thanh toán trong 90 ngày":
-          return baseDate.add(90, 'day').endOf('day').valueOf();
-        case "Thanh toán cuối tháng":
-          return baseDate.endOf('month').valueOf();
-        default:
-          return baseDate.endOf('day').valueOf();
-      }
+    // 🔥 LOGIC MỚI: Anh chủ chốt cứng Ngày xuất + 20 ngày
+    const getNgayDenHan = (ngayXuatHoaDon) => {
+      // Ép về múi giờ VN, cộng 20 ngày, chốt đến cuối ngày (23:59:59)
+      return dayjs(ngayXuatHoaDon).tz(VN_TZ).add(20, 'day').endOf('day').valueOf();
     };
 
     let conNo = { soHoaDon: 0, tongTien: 0 };
@@ -978,7 +991,8 @@ exports.thongKeCongNoHoaDon = async (req, res) => {
       conNo.soHoaDon += 1;
       conNo.tongTien += soTienConLai;
 
-      const timestampDenHan = getNgayDenHan(hd.ngayXuatHoaDon, hd.chinhSachThanhToan);
+      // Không cần truyền chinhSachThanhToan vào nữa
+      const timestampDenHan = getNgayDenHan(hd.ngayXuatHoaDon);
 
       if (now > timestampDenHan) {
         treHan.soHoaDon += 1;
