@@ -6,7 +6,9 @@ const getCongNoNhaKhoa = async (nhaKhoaId) => {
         {
             $match: {
                 nhaKhoa: new mongoose.Types.ObjectId(nhaKhoaId),
-                conLai: { $gt: 0 }
+                conLai: { $gt: 0 },
+                // 🔥 THÊM DÒNG NÀY: Loại bỏ các hóa đơn đang ở trạng thái nháp
+                trangThai: { $ne: "Lưu tạm" }
             }
         },
         {

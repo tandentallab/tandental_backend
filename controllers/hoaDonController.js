@@ -30,7 +30,8 @@ const calculateConLai = (giaTriThanhToan, daThanhToan) => {
 };
 
 
-const autoTrangThai = (conLai, daThanhToan) => {
+const autoTrangThai = (conLai, daThanhToan, currentTrangThai) => {
+  if (currentTrangThai === "Lưu tạm") return "Lưu tạm";
   if (conLai <= 0) return "Đã thanh toán";
   if (daThanhToan > 0) return "Thanh toán một phần";
   return "Chưa thanh toán";
@@ -115,7 +116,7 @@ async function buildDanhSachSanPham(donHangIds, nhaKhoaId, session = null) {
         thanhTien: roundMoney(thanhTienSnapshot),
         giamGia: roundMoney(giamGia),
         tongCongSanPham: roundMoney(tongCongSanPham),
-        ghiChu: spItem.ghiChu || "",
+        ghiChu: donHang.ghiChuTaiChinh || "",
       });
     }
   }
@@ -262,6 +263,8 @@ exports.countDonHangChuaXuatHoaDonAll = async (req, res) => {
 exports.getNgayXuatHoaDonGanNhatAll = async (req, res) => {
   try {
     const result = await HoaDon.aggregate([
+      // 🔥 THÊM BƯỚC NÀY: Lọc bỏ ngay các hóa đơn giả mang mã SDDK
+      { $match: { soHoaDon: { $not: /^SDDK/i } } },
       { $sort: { denNgay: -1 } },
       {
         $group: {
@@ -345,8 +348,33 @@ exports.createHoaDon = async (req, res) => {
         throw new Error("Ngày bắt đầu không thể lớn hơn ngày kết thúc.");
       }
 
+      // ================= TẠO MÃ HÓA ĐƠN THEO FORMAT MỚI =================
+      const now = dayjs().tz(VN_TZ);
+      const yearStr = now.format("YY"); // Lấy 2 số cuối của năm (VD: 26)
+      const monthStr = now.format("MM"); // Lấy 2 số của tháng (VD: 05)
+      const prefix = `HD${yearStr}${monthStr}`;
+
+      // Tìm hóa đơn mới nhất trong tháng hiện tại
+      const lastHoaDon = await mongoose.model("HoaDon").findOne(
+        { soHoaDon: new RegExp(`^${prefix}`) },
+        { soHoaDon: 1 }
+      ).sort({ soHoaDon: -1 }).session(session);
+
+      let nextNumber = 1;
+      if (lastHoaDon && lastHoaDon.soHoaDon) {
+        // Cắt lấy 4 số cuối cùng và cộng thêm 1
+        const lastNumber = parseInt(lastHoaDon.soHoaDon.slice(-4), 10);
+        if (!isNaN(lastNumber)) {
+          nextNumber = lastNumber + 1;
+        }
+      }
+
+      // Ép thành chuỗi 4 chữ số (VD: 1 -> 0001, 15 -> 0015)
+      const sttStr = nextNumber.toString().padStart(4, "0");
+      const maSoHoaDon = `${prefix}${sttStr}`;
+
       const newHoaDonId = new mongoose.Types.ObjectId();
-      const maSoHoaDon = "TAN" + newHoaDonId.toString().slice(-8).toUpperCase();
+      // ================================================================
 
       const updateResult = await DonHang.updateMany(
         { _id: { $in: danhSachDonHangIds }, daXuatHoaDon: { $ne: true } },
@@ -370,6 +398,7 @@ exports.createHoaDon = async (req, res) => {
 
       const nhaKhoaInfo = await mongoose.model("NhaKhoa").findById(nhaKhoaId).session(session);
       if (!nhaKhoaInfo) throw new Error("Không tìm thấy Nha Khoa");
+
       // Chỉ tính thuần túy phát sinh của kỳ này
       const phatSinhKyNay = calculateGiaTriThanhToan({ tongCong, chietKhau, thue, chiPhiKhac });
 
@@ -379,7 +408,7 @@ exports.createHoaDon = async (req, res) => {
 
       const newHoaDon = new HoaDon({
         _id: newHoaDonId,
-        soHoaDon: maSoHoaDon,
+        soHoaDon: maSoHoaDon, // Dùng mã hóa đơn mới sinh ra
         nhaKhoa: nhaKhoaId,
         tuNgay: finalTuNgay,
         denNgay: finalDenNgay,
@@ -392,7 +421,7 @@ exports.createHoaDon = async (req, res) => {
         daThanhToan: 0,
         conLai,
         // 🔥 ĐÃ XÓA noDauKy VÀ soDuMigrate KHỎI PAYLOAD LƯU DB
-        trangThai: autoTrangThai(conLai, 0),
+        trangThai: "Lưu tạm",
         ghiChuNoiBo,
         ghiChuChoKhachHang,
         chinhSachThanhToan,
@@ -554,7 +583,7 @@ exports.getHoaDonById = async (req, res) => {
     const cacHoaDonTruoc = await HoaDon.find({
       nhaKhoa: hoaDon.nhaKhoa._id,
       _id: { $ne: hoaDon._id }, // Trừ chính hóa đơn đang xem ra
-      trangThai: { $ne: "Đã thanh toán" }, // Chỉ lấy các hóa đơn còn nợ
+      trangThai: { $nin: ["Đã thanh toán", "Lưu tạm"] },
       $or: [
         // Điều kiện 1: Ưu tiên tuyệt đối lấy các hóa đơn có Ngày Xuất cũ hơn
         { ngayXuatHoaDon: { $lt: hoaDon.ngayXuatHoaDon } },
@@ -605,24 +634,40 @@ exports.updateHoaDon = async (req, res) => {
         ghiChuChoKhachHang,
         chinhSachThanhToan,
         ngayXuatHoaDon,
+        xacNhanHoaDon
       } = req.body;
 
       const hoaDon = await HoaDon.findById(id).session(session);
       if (!hoaDon) {
         throw new Error("Không tìm thấy hóa đơn");
       }
+      const trangThaiGoc = hoaDon.trangThai;
 
-      // ================= 1. CÁC TRƯỜNG LUÔN CHO PHÉP SỬA (PHI TÀI CHÍNH) =================
+      // ================= 1. CÁC TRƯỜNG LUÔN CHO PHÉP SỬA =================
       if (ghiChuNoiBo !== undefined) hoaDon.ghiChuNoiBo = ghiChuNoiBo;
       if (ghiChuChoKhachHang !== undefined) hoaDon.ghiChuChoKhachHang = ghiChuChoKhachHang;
       if (chinhSachThanhToan !== undefined) hoaDon.chinhSachThanhToan = chinhSachThanhToan;
       if (ngayXuatHoaDon) hoaDon.ngayXuatHoaDon = new Date(ngayXuatHoaDon);
 
+      // 🔥 NẾU FRONTEND BẤM XÁC NHẬN -> MỞ KHÓA TRẠNG THÁI
+      if (xacNhanHoaDon && trangThaiGoc === "Lưu tạm") {
+        hoaDon.trangThai = "Chưa thanh toán";
+      }
+
       // ================= 2. KIỂM TRA ĐIỀU KIỆN KHÓA TÀI CHÍNH =================
       const isPaid = hoaDon.daThanhToan > 0;
+      const allowFinancialUpdate = !isPaid; // Cho phép sửa nếu CHƯA ĐÓNG TIỀN (daThanhToan == 0)
 
-      // CHỈ chặn duy nhất trường hợp hóa đơn đã có Phiếu thu (isPaid = true)
-      const allowFinancialUpdate = !isPaid;
+      // 🔥 LOGIC MỚI: SO SÁNH XEM ĐƠN HÀNG CÓ THỰC SỰ BỊ THAY ĐỔI HAY KHÔNG
+      let isDanhSachDonHangChanged = false;
+      if (danhSachDonHangIds) {
+        const oldDonHangIds = [...new Set(hoaDon.danhSachSanPham.map(sp => sp.donHang.toString()))].sort();
+        const newDonHangIds = [...new Set(danhSachDonHangIds.map(id => id.toString()))].sort();
+
+        isDanhSachDonHangChanged = oldDonHangIds.length !== newDonHangIds.length ||
+          oldDonHangIds.some((val, i) => val !== newDonHangIds[i]);
+      }
+
 
       // 🔥 LOGIC THÔNG MINH: Chỉ chặn khi các con số THỰC SỰ bị lệch so với Database
       let isTryingToChangeMoney = false;
@@ -631,7 +676,9 @@ exports.updateHoaDon = async (req, res) => {
       if (chietKhau !== undefined && Number(chietKhau) !== hoaDon.chietKhau) isTryingToChangeMoney = true;
       if (thue !== undefined && Number(thue) !== hoaDon.thue) isTryingToChangeMoney = true;
       if (chiPhiKhac !== undefined && Number(chiPhiKhac) !== hoaDon.chiPhiKhac) isTryingToChangeMoney = true;
-      if (danhSachDonHangIds) isTryingToChangeMoney = true; // Thêm bớt đơn hàng là chắc chắn đổi tiền
+
+      // 🔥 (ĐÃ SỬA DÒNG NÀY): Chỉ bật cờ khi thực sự có đổi danh sách đơn
+      if (isDanhSachDonHangChanged) isTryingToChangeMoney = true;
 
       // 2. Check sâu vào từng sản phẩm (Đơn giá/Thành tiền là snapshot, KHÔNG CHECK)
       if (danhSachSanPhamMoi?.length) {
@@ -671,7 +718,7 @@ exports.updateHoaDon = async (req, res) => {
         if (chietKhau !== undefined) hoaDon.chietKhau = Number(chietKhau);
 
         // Cập nhật danh sách đơn hàng gộp vào hóa đơn nếu có thay đổi
-        if (danhSachDonHangIds) {
+        if (isDanhSachDonHangChanged) { // 🔥 Đã sửa ở đây
           const oldDonHangIds = [...new Set(hoaDon.danhSachSanPham.map((sp) => sp.donHang.toString()))];
           const newDonHangIds = danhSachDonHangIds.map((id) => id.toString());
 
@@ -686,7 +733,7 @@ exports.updateHoaDon = async (req, res) => {
           hoaDon.tongCong = roundMoney(tongCong);
         }
         // Cập nhật giảm giá/ghi chú cho từng sản phẩm
-        else if (danhSachSanPhamMoi?.length) {
+        if (danhSachSanPhamMoi?.length) {
           danhSachSanPhamMoi.forEach((spMoi) => {
             const sp = hoaDon.danhSachSanPham.find((s) =>
               spMoi.sanPhamDonHangId
@@ -735,7 +782,8 @@ exports.updateHoaDon = async (req, res) => {
         if (hoaDon.giaTriThanhToan < 0) throw new Error("Giá trị thanh toán cuối cùng không được âm");
 
         hoaDon.conLai = calculateConLai(hoaDon.giaTriThanhToan, hoaDon.daThanhToan);
-        hoaDon.trangThai = autoTrangThai(hoaDon.conLai, hoaDon.daThanhToan);
+        // 🔥 TRUYỀN THÊM THAM SỐ THỨ 3 VÀO ĐÂY:
+        hoaDon.trangThai = autoTrangThai(hoaDon.conLai, hoaDon.daThanhToan, hoaDon.trangThai);
       }
 
       // Lưu lại hóa đơn (Nếu allowFinancialUpdate = false, nó chỉ cập nhật các trường ghi chú ở mục 1)
@@ -827,6 +875,14 @@ exports.deleteHoaDon = async (req, res) => {
 
       const hoaDon = await HoaDon.findById(id).session(session);
       if (!hoaDon) throw new Error("Không tìm thấy hóa đơn");
+
+      // KHÓA TÀI CHÍNH: Tuyệt đối không cho xóa nếu Hóa đơn đã có Phiếu thu rót tiền vào
+      if (hoaDon.daThanhToan > 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Hóa đơn này đã có phát sinh thanh toán. Tuyệt đối không thể xóa để bảo vệ dòng tiền!"
+        });
+      }
 
       if (hoaDon.daThanhToan > 0) {
         throw new Error("Không thể xóa hóa đơn đã có giao dịch thanh toán");
