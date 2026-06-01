@@ -29,34 +29,12 @@ const bangLuongRoutes = require("./routes/bangLuongRoutes");
 const searchRoutes = require("./routes/searchRoutes");
 const activityLogRoutes = require("./routes/activityLogRoutes");
 
-
 const app = express();
 
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:3001",
-  "https://tan-dental-frontend-snmb.vercel.app",
-  "https://tan-dental-frontend-yzw6.vercel.app",
-  "https://tan-dental-frontend.vercel.app",
-  "https://tandental.vercel.app",
-  "http://127.0.0.1:3000",
-  "https://tan-dental.vercel.app",
-  process.env.ADMIN_FRONTEND_URL,
-  process.env.PUBLIC_FRONTEND_URL,
-].filter(Boolean);
-
-app.use(
-  cors({
-    origin: (origin, callback) => {
-
-      if (!origin || allowedOrigins.includes(origin) || origin.startsWith("http://192.168.") || origin.startsWith("http://172.")) {
-        return callback(null, true);
-      }
-      return callback(new Error("Not allowed by CORS"));
-    },
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin: true,
+  credentials: true,
+}));
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ limit: "15mb", extended: true }));
 

@@ -7,14 +7,12 @@ const {
   updateNguoiLienHe,
 } = require("../controllers/nguoiLienHeController");
 
-const { verifyToken, authorizeRoles, APP_ROLES } = require("../middleware/authMiddleware");
-
-const allowAdminAndNhanVien = authorizeRoles(APP_ROLES.ADMIN, APP_ROLES.NHAN_VIEN);
+const { verifyToken, checkPermission } = require("../middleware/authMiddleware");
 
 
-router.post("/",verifyToken, allowAdminAndNhanVien, createNguoiLienHe);
-router.get("/",verifyToken, allowAdminAndNhanVien, getAllNguoiLienHe);
-router.put("/:id",verifyToken, allowAdminAndNhanVien, updateNguoiLienHe)
+router.post("/",verifyToken, checkPermission, createNguoiLienHe);
+router.get("/",verifyToken, checkPermission, getAllNguoiLienHe);
+router.put("/:id",verifyToken, checkPermission, updateNguoiLienHe)
 
 
 module.exports = router;
