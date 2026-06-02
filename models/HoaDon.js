@@ -109,8 +109,8 @@ const hoaDonSchema = new mongoose.Schema(
     ngayXuatHoaDon: { type: Date, default: Date.now },
     trangThai: {
       type: String,
-      enum: ["Chưa thanh toán", "Thanh toán một phần", "Đã thanh toán"],
-      default: "Chưa thanh toán",
+      enum: ["Lưu tạm", "Chưa thanh toán", "Thanh toán một phần", "Đã thanh toán"],
+      default: "Lưu tạm", // Mặc định sinh ra là Lưu tạm
     },
     chinhSachThanhToan: {
       type: String,
@@ -138,18 +138,18 @@ const hoaDonSchema = new mongoose.Schema(
 hoaDonSchema.index({ nhaKhoa: 1, denNgay: -1 });
 
 hoaDonSchema.pre("save", function () {
-  // 1. Còn lại = TỔNG giá trị (đã bao gồm nợ cũ) - Đã thanh toán
+  // 1. Tính toán số tiền Còn lại
   this.conLai = Math.round(Number(this.giaTriThanhToan || 0) - Number(this.daThanhToan || 0));
 
-
-
-  // 3. Trạng thái
-  if (this.conLai <= 0) {
-    this.trangThai = "Đã thanh toán";
-  } else if (this.daThanhToan > 0) {
-    this.trangThai = "Thanh toán một phần";
-  } else {
-    this.trangThai = "Chưa thanh toán";
+  // 2. Chốt trạng thái (Bỏ qua nếu đang là Lưu tạm)
+  if (this.trangThai !== "Lưu tạm") {
+    if (this.conLai <= 0) {
+      this.trangThai = "Đã thanh toán";
+    } else if (this.daThanhToan > 0) {
+      this.trangThai = "Thanh toán một phần";
+    } else {
+      this.trangThai = "Chưa thanh toán";
+    }
   }
 });
 

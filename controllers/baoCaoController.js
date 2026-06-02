@@ -161,50 +161,24 @@ exports.getDoanhThuThang = async (req, res) => {
         const thang = parseInt(req.query.thang) || new Date().getMonth() + 1;
         const nam = parseInt(req.query.nam) || new Date().getFullYear();
 
-        // Đảm bảo bạn đã khai báo dayjs và VN_TZ ở đầu file controller
-        const startOfMonth = dayjs
-            .tz(`${nam}-${String(thang).padStart(2, "0")}-01`, VN_TZ)
-            .startOf("day")
-            .toDate();
-        const endOfMonth = dayjs(startOfMonth)
-            .tz(VN_TZ)
-            .endOf("month")
-            .toDate();
+        const startOfMonth = dayjs.tz(`${nam}-${String(thang).padStart(2, "0")}-01`, VN_TZ).startOf("month").toDate();
+        const endOfMonth = dayjs(startOfMonth).tz(VN_TZ).endOf("month").toDate();
 
-        // ── 1. AGGREGATE HÓA ĐƠN: Tính Phát Sinh Thuần & Chốt Nợ Khởi Tạo ──
-        // ĐÃ XÓA lệnh $sort để tăng tốc tối đa cho Server
+        // ── 1. AGGREGATE HÓA ĐƠN ──
         const hdStats = await HoaDon.aggregate([
+            // 🔥 Pro-tip: Nên loại trừ luôn cả Hóa đơn "Đã hủy" (nếu hệ thống sếp có)
+            { $match: { trangThai: { $nin: ["Lưu tạm", "Đã hủy"] } } },
             {
                 $group: {
                     _id: "$nhaKhoa",
-                    tongSoDuMigrate: { $sum: "$soDuMigrate" },
                     phatSinhTruoc: {
-                        $sum: {
-                            $cond: [
-                                { $lt: ["$ngayXuatHoaDon", startOfMonth] },
-                                {
-                                    $add: [
-                                        { $subtract: ["$tongCong", "$chietKhau"] },
-                                        { $multiply: [{ $subtract: ["$tongCong", "$chietKhau"] }, { $divide: ["$thue", 100] }] },
-                                        "$chiPhiKhac"
-                                    ]
-                                },
-                                0
-                            ]
-                        }
+                        $sum: { $cond: [{ $lt: ["$ngayXuatHoaDon", startOfMonth] }, "$giaTriThanhToan", 0] }
                     },
                     phatSinhTrong: {
                         $sum: {
                             $cond: [
                                 { $and: [{ $gte: ["$ngayXuatHoaDon", startOfMonth] }, { $lte: ["$ngayXuatHoaDon", endOfMonth] }] },
-                                {
-                                    $add: [
-                                        { $subtract: ["$tongCong", "$chietKhau"] },
-                                        { $multiply: [{ $subtract: ["$tongCong", "$chietKhau"] }, { $divide: ["$thue", 100] }] },
-                                        "$chiPhiKhac"
-                                    ]
-                                },
-                                0
+                                "$giaTriThanhToan", 0
                             ]
                         }
                     }
@@ -212,26 +186,10 @@ exports.getDoanhThuThang = async (req, res) => {
             }
         ]);
 
-        // ── 2. AGGREGATE PHIẾU THU: Dòng tiền thực tế khách đã nộp ──
+        // ── 2. AGGREGATE PHIẾU THU ──
         const ptStats = await PhieuThu.aggregate([
-            {
-                $lookup: {
-                    from: "hoadons",
-                    localField: "danhSachHoaDon.hoaDon",
-                    foreignField: "_id",
-                    as: "hdList"
-                }
-            },
-            { $unwind: { path: "$hdList", preserveNullAndEmptyArrays: true } },
-            {
-                $group: {
-                    _id: "$_id",
-                    nhaKhoa: { $first: "$hdList.nhaKhoa" },
-                    ngayThu: { $first: "$ngayThu" },
-                    soTienThu: { $first: "$soTienThu" }
-                }
-            },
-            { $match: { nhaKhoa: { $ne: null } } },
+            // 🔥 Pro-tip: Tương tự, nhớ loại trừ Phiếu thu "Đã hủy" (nếu có)
+            { $match: { nhaKhoa: { $ne: null }, trangThai: { $ne: "Đã hủy" } } },
             {
                 $group: {
                     _id: "$nhaKhoa",
@@ -249,57 +207,35 @@ exports.getDoanhThuThang = async (req, res) => {
                 }
             }
         ]);
-        // ── 3. LẤY DANH SÁCH NHA KHOA (NHỚ GIỮ LẠI TRƯỜNG soDuDauKy) ──
-        const nhaKhoaList = await NhaKhoa.find({}, "tenGiaoDich hoVaTen soDuDauKy ghiChuThang").lean();
+
+        // ── 3. LẤY DANH SÁCH NHA KHOA ──
+        const nhaKhoaList = await NhaKhoa.find({}, "tenGiaoDich hoVaTen ghiChuThang").lean(); // ko cần gọi soDuDauKy ra luôn cho nhẹ
 
         const hdMap = hdStats.reduce((m, x) => { m[x._id.toString()] = x; return m; }, {});
         const ptMap = ptStats.reduce((m, x) => { m[x._id.toString()] = x; return m; }, {});
 
-        // ── 4. TÍNH TOÁN BÁO CÁO TOÀN DIỆN VỚI MỐC "BẤT ĐỊNH" THÁNG GO-LIVE ──
         let tongNoDauKy = 0, tongPhatSinh = 0, tongThanhToan = 0, tongConNo = 0;
         const chiTiet = [];
 
+        // ── 4. TÍNH TOÁN BÁO CÁO (Siêu gọn) ──
         for (const nk of nhaKhoaList) {
             const id = nk._id.toString();
             const hd = hdMap[id] || { phatSinhTruoc: 0, phatSinhTrong: 0 };
             const pt = ptMap[id] || { thanhToanTruoc: 0, thanhToanTrong: 0 };
 
-            let noDauKy = 0;
+            // 🚀 Thuật toán xịn là thuật toán không cần if/else. Cứ để Data tự lên tiếng!
+            const noDauKy = Math.round(hd.phatSinhTruoc - pt.thanhToanTruoc);
             const phatSinh = Math.round(hd.phatSinhTrong);
             const thanhToan = Math.round(pt.thanhToanTrong);
-
-            // Tìm mốc khởi tạo của Nha Khoa (Tháng nhập số dư đầu kỳ)
-            const arrSoDu = Array.isArray(nk.soDuDauKy) ? nk.soDuDauKy : [];
-            const goLive = arrSoDu.length > 0
-                ? [...arrSoDu].sort((a, b) => (a.nam - b.nam) || (a.thang - b.thang))[0]
-                : null;
-
-            if (goLive) {
-                // Kiểm tra xem báo cáo đang xem thuộc giai đoạn nào so với mốc Go-Live
-                if (nam < goLive.nam || (nam === goLive.nam && thang < goLive.thang)) {
-                    // Xem báo cáo TRƯỚC thời điểm chạy hệ thống -> Nợ = 0
-                    noDauKy = 0;
-                } else if (nam === goLive.nam && thang === goLive.thang) {
-                    // 🔥 ĐÚNG THÁNG GO-LIVE (Tháng 6): ÉP CỨNG LẤY SỐ TIỀN NHẬP TAY LÀM HẰNG SỐ CỐ ĐỊNH
-                    noDauKy = goLive.soTien;
-                } else {
-                    // TỪ THÁNG 7 TRỞ ĐI: Hệ thống thả trôi cho tự động tính lũy kế bình thường
-                    // (Vì bạn dùng Cách 1: có tạo Hóa đơn SDDK ngày 31/05, nên hd.phatSinhTruoc đã tự bao hàm số tiền gốc này rồi)
-                    noDauKy = Math.round(hd.phatSinhTruoc - pt.thanhToanTruoc);
-                }
-            } else {
-                // Nha khoa mới hoàn toàn, không nhập nợ cũ -> chạy logic bình thường
-                noDauKy = Math.round(hd.phatSinhTruoc - pt.thanhToanTruoc);
-            }
-
             const conNo = Math.round(noDauKy + phatSinh - thanhToan);
 
-            // Chỉ đưa vào báo cáo những Nha khoa có phát sinh giao dịch hoặc còn nợ
+            // Bỏ qua các phòng khám không có biến động tài chính
             if (noDauKy !== 0 || phatSinh !== 0 || thanhToan !== 0 || conNo !== 0) {
                 tongNoDauKy += noDauKy;
                 tongPhatSinh += phatSinh;
                 tongThanhToan += thanhToan;
                 tongConNo += conNo;
+
                 const ghiChuEntry = (nk.ghiChuThang || []).find(g => g.thang === thang && g.nam === nam);
 
                 chiTiet.push({

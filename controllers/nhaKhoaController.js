@@ -40,21 +40,25 @@ const taoTenVietTat = (ten, idFallback) => {
 };
 
 exports.updateSoDuDauKy = async (req, res) => {
-
   const session = await mongoose.startSession();
-  try {
-    let updatedNhaKhoa;
+  let businessError = null;
+  let updatedNhaKhoa;
 
+  try {
     await session.withTransaction(async () => {
       const { id } = req.params;
       const { thang, nam, soTien } = req.body;
 
       if (!thang || !nam || soTien === undefined) {
-        throw new Error("Thiếu thang, nam hoặc soTien");
+        businessError = "Thiếu thang, nam hoặc soTien";
+        return;
       }
 
       const nhaKhoa = await NhaKhoa.findById(id).session(session);
-      if (!nhaKhoa) throw new Error("Không tìm thấy nha khoa");
+      if (!nhaKhoa) {
+        businessError = "Không tìm thấy nha khoa";
+        return;
+      }
 
       // ================= 1. LƯU VÀO BẢNG NHA KHOA =================
       if (!Array.isArray(nhaKhoa.soDuDauKy)) nhaKhoa.soDuDauKy = [];
@@ -64,75 +68,81 @@ exports.updateSoDuDauKy = async (req, res) => {
       );
 
       if (existingIndex !== -1) {
-        nhaKhoa.soDuDauKy[existingIndex].soTien = Number(soTien); // Cập nhật
+        nhaKhoa.soDuDauKy[existingIndex].soTien = Number(soTien);
       } else {
-        nhaKhoa.soDuDauKy.push({ thang: Number(thang), nam: Number(nam), soTien: Number(soTien) }); // Thêm mới
+        nhaKhoa.soDuDauKy.push({
+          thang: Number(thang),
+          nam: Number(nam),
+          soTien: Number(soTien),
+        });
       }
       await nhaKhoa.save({ session });
       updatedNhaKhoa = nhaKhoa;
 
-      // ================= 2. TẠO, CẬP NHẬT HOẶC XÓA HÓA ĐƠN ĐẦU KỲ (SDDK) =================
-
+      // ================= 2. XỬ LÝ HÓA ĐƠN SDDK =================
       const yy = String(nam).slice(-2);
       const mm = String(thang).padStart(2, "0");
-
-      // 🔥 FIX BUG 1: Dùng đuôi ID của Nha Khoa thay vì Tên viết tắt để đảm bảo độc nhất 100%
       const uniqueSuffix = nhaKhoa._id.toString().slice(-8).toUpperCase();
       const soHoaDonSDDK = `SDDK-${mm}${yy}-${uniqueSuffix}`;
 
-      const ngayXuat = dayjs.tz(`${nam}-${mm}-01`, VN_TZ)
-        .subtract(1, 'month')
+      const ngayXuat = dayjs
+        .tz(`${nam}-${mm}-01`, VN_TZ)
+        .subtract(1, "month")
         .date(11)
         .toDate();
 
-      // 🔥 FIX BUG 2: Tìm kiếm ĐÍCH DANH hóa đơn SDDK của ĐÚNG Nha Khoa này
-      // Dùng regex để đảm bảo dù DB đang lưu mã cũ hay mã mới, nó vẫn tìm trúng phóc!
-      let hoaDonSDDK = await HoaDon.findOne({
+      const hoaDonSDDK = await HoaDon.findOne({
         nhaKhoa: nhaKhoa._id,
-        soHoaDon: { $regex: new RegExp(`^SDDK-${mm}${yy}`, 'i') }
+        soHoaDon: { $regex: new RegExp(`^SDDK-${mm}${yy}`, "i") },
       }).session(session);
 
-      // 🔥 LOGIC MỚI: XỬ LÝ KHI KẾ TOÁN NHẬP SỐ 0
+      // ✅ CHẶN HOÀN TOÀN nếu đã có phiếu thu — không phân biệt soTien là 0 hay > 0
+      if (hoaDonSDDK && (hoaDonSDDK.daThanhToan || 0) > 0) {
+        businessError = `Không thể chỉnh sửa SDDK tháng ${thang}/${nam} vì đã có phiếu thu thanh toán ${hoaDonSDDK.daThanhToan.toLocaleString("vi-VN")}đ. Vui lòng xóa phiếu thu trước.`;
+        return;
+      }
+
+      // ================= XỬ LÝ KHI soTien = 0 =================
       if (Number(soTien) === 0) {
         if (hoaDonSDDK) {
-          // Nếu đã trả tiền thì cấm xóa/cấm set về 0
-          if ((hoaDonSDDK.daThanhToan || 0) > 0) {
-            throw new Error(`Không thể hủy nợ vì khách đã thanh toán ${hoaDonSDDK.daThanhToan.toLocaleString('vi-VN')}đ cho khoản này!`);
-          }
-          // XÓA LUÔN HÓA ĐƠN NÀY CHO SẠCH DATABASE
           await HoaDon.deleteOne({ _id: hoaDonSDDK._id }).session(session);
         }
-        // (Nếu chưa có hóa đơn mà nhập 0 thì hệ thống cũng không làm gì cả, không sinh rác)
+        // Nếu chưa có hóa đơn + soTien = 0 → không làm gì
+        return;
       }
-      // 🔥 LOGIC CŨ: KHI KẾ TOÁN NHẬP SỐ LỚN HƠN 0
-      else {
-        if (hoaDonSDDK) {
-          if (Number(soTien) < (hoaDonSDDK.daThanhToan || 0)) {
-            throw new Error(`Không thể giảm nợ xuống dưới số tiền đã trả (${hoaDonSDDK.daThanhToan.toLocaleString('vi-VN')}đ)!`);
-          }
-          // Lỡ DB đang lưu mã cũ, ta cập nhật lại thành mã mới cho chuẩn luôn
-          hoaDonSDDK.soHoaDon = soHoaDonSDDK;
-          hoaDonSDDK.tongCong = Number(soTien);
-          hoaDonSDDK.giaTriThanhToan = Number(soTien);
-          await hoaDonSDDK.save({ session });
-        } else {
-          hoaDonSDDK = new HoaDon({
-            soHoaDon: soHoaDonSDDK,
-            nhaKhoa: nhaKhoa._id,
-            tuNgay: ngayXuat,
-            denNgay: ngayXuat,
-            ngayXuatHoaDon: ngayXuat,
-            danhSachSanPham: [],
-            tongCong: Number(soTien),
-            giaTriThanhToan: Number(soTien),
-            daThanhToan: 0,
-            chinhSachThanhToan: "Thanh toán ngay",
-            ghiChuNoiBo: `Số dư công nợ chuyển giao tính đến tháng ${thang}/${nam}`,
-          });
-          await hoaDonSDDK.save({ session });
-        }
+
+      // ================= XỬ LÝ KHI soTien > 0 =================
+      // Tại đây daThanhToan đã được đảm bảo = 0 nên conLai = soTien, trangThai = "Chưa thanh toán"
+      if (hoaDonSDDK) {
+        hoaDonSDDK.soHoaDon = soHoaDonSDDK;
+        hoaDonSDDK.tongCong = Number(soTien);
+        hoaDonSDDK.giaTriThanhToan = Number(soTien);
+        hoaDonSDDK.conLai = Number(soTien);
+        hoaDonSDDK.trangThai = "Chưa thanh toán";
+        await hoaDonSDDK.save({ session });
+      } else {
+        const hoaDonMoi = new HoaDon({
+          soHoaDon: soHoaDonSDDK,
+          nhaKhoa: nhaKhoa._id,
+          tuNgay: ngayXuat,
+          denNgay: ngayXuat,
+          ngayXuatHoaDon: ngayXuat,
+          danhSachSanPham: [],
+          tongCong: Number(soTien),
+          giaTriThanhToan: Number(soTien),
+          daThanhToan: 0,
+          conLai: Number(soTien),
+          chinhSachThanhToan: "Thanh toán ngay",
+          ghiChuNoiBo: `Số dư công nợ chuyển giao tính đến tháng ${thang}/${nam}`,
+          trangThai: "Chưa thanh toán",
+        });
+        await hoaDonMoi.save({ session });
       }
     });
+
+    if (businessError) {
+      return res.status(400).json({ success: false, message: businessError });
+    }
 
     res.json({ success: true, data: updatedNhaKhoa });
   } catch (err) {

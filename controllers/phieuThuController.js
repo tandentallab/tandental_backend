@@ -20,17 +20,34 @@ exports.getAllPhieuThu = async (req, res) => {
       pipeline.push({ $match: { ngayThu: dateMatch } });
     }
 
+    // 🔥 LOGIC LẤY THÔNG TIN NHA KHOA ĐÃ ĐƯỢC TỐI ƯU SIÊU TỐC
     pipeline.push(
+      // 1. Ưu tiên: Lookup trực tiếp từ trường nhaKhoa (Rất nhanh)
+      { $lookup: { from: "nhakhoas", localField: "nhaKhoa", foreignField: "_id", as: "nhaKhoaDirect" } },
+
+      // 2. Dự phòng: Cho các phiếu thu cũ chưa có trường nhaKhoa (Đi đường vòng qua HoaDon)
+      { $addFields: { _hoaDonIds: "$danhSachHoaDon.hoaDon" } },
+      { $lookup: { from: "hoadons", localField: "_hoaDonIds", foreignField: "_id", as: "hoaDonInfoList" } },
+      { $addFields: { hoaDonInfo: { $arrayElemAt: ["$hoaDonInfoList", 0] } } },
+      { $lookup: { from: "nhakhoas", localField: "hoaDonInfo.nhaKhoa", foreignField: "_id", as: "nhaKhoaFallback" } },
+
+      // 3. Hợp nhất: Nếu có nhaKhoa trực tiếp thì xài, không thì xài dự phòng
       {
         $addFields: {
-          _hoaDonIds: "$danhSachHoaDon.hoaDon",
-        },
+          nhaKhoaInfoArr: {
+            $cond: {
+              if: { $gt: [{ $size: "$nhaKhoaDirect" }, 0] },
+              then: "$nhaKhoaDirect",
+              else: "$nhaKhoaFallback"
+            }
+          }
+        }
       },
-      { $lookup: { from: "hoadons", localField: "_hoaDonIds", foreignField: "_id", as: "hoaDonInfoList" } },
-      // hoaDonInfo = phần tử đầu tiên (để lấy nhaKhoa, backward compat)
-      { $addFields: { hoaDonInfo: { $arrayElemAt: ["$hoaDonInfoList", 0] } } },
-      { $lookup: { from: "nhakhoas", localField: "hoaDonInfo.nhaKhoa", foreignField: "_id", as: "nhaKhoaInfo" } },
-      { $unwind: { path: "$nhaKhoaInfo", preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: "$nhaKhoaInfoArr", preserveNullAndEmptyArrays: true } },
+      { $addFields: { nhaKhoaInfo: "$nhaKhoaInfoArr" } }, // Gán lại đúng tên biến để code bên dưới của bạn chạy
+
+      // 4. Xóa rác cho nhẹ payload
+      { $project: { nhaKhoaDirect: 0, nhaKhoaFallback: 0, nhaKhoaInfoArr: 0 } }
     );
 
     // NhaKhoa filter
@@ -57,7 +74,7 @@ exports.getAllPhieuThu = async (req, res) => {
 
     pipeline.push({ $sort: { createdAt: -1 } });
 
-    // Enrich danhSachHoaDon with full hoaDon details (chỉ cho data pipeline, sau skip/limit để nhẹ)
+    // Enrich danhSachHoaDon with full hoaDon details
     const countPipeline = [...pipeline, { $count: "total" }];
     const dataPipeline = [
       ...pipeline,
@@ -136,16 +153,14 @@ exports.createPhieuThu = async (req, res) => {
       const nhaKhoa = await mongoose.model("NhaKhoa").findById(nhaKhoaId).session(session);
       if (!nhaKhoa) throw new Error("Không tìm thấy Nha khoa");
 
-      // 🔥 BƯỚC 2: DUYỆT THEO MẢNG PHÂN BỔ THỰC TẾ, KHÔNG CHƠI THÁC NƯỚC TỰ ĐỘNG NỮA
+      // 🔥 BƯỚC 2: DUYỆT THEO MẢNG PHÂN BỔ THỰC TẾ
       for (const item of danhSachHoaDon) {
         const hdId = item.hoaDon;
         const tienTraChoHdNay = Number(item.soTienThanhToan || 0);
 
-        // Nếu dòng hóa đơn này không được chia đồng nào thì bỏ qua
         if (tienTraChoHdNay <= 0) continue;
 
-        // Tìm chính xác hóa đơn được chỉ định
-        const hd = await HoaDon.findById(hdId).session(session);
+        const hd = await mongoose.model("HoaDon").findById(hdId).session(session);
         if (!hd) {
           throw new Error(`Không tìm thấy hóa đơn có ID: ${hdId}`);
         }
@@ -154,9 +169,8 @@ exports.createPhieuThu = async (req, res) => {
         const snapshotDaTTruoc = hd.daThanhToan || 0;
         const snapshotConLaiTruoc = hd.conLai || 0;
 
-        // Lưu đúng số tiền kế toán gõ tay ở dòng này
         hd.daThanhToan += tienTraChoHdNay;
-        hd.conLai = Math.max(0, hd.giaTriThanhToan - hd.daThanhToan); // Tính dựa trên gốc giaTriThanhToan để triệt tiêu lệch số
+        hd.conLai = Math.max(0, hd.giaTriThanhToan - hd.daThanhToan);
 
         if (hd.conLai <= 0) hd.trangThai = "Đã thanh toán";
         else if (hd.daThanhToan > 0) hd.trangThai = "Thanh toán một phần";
@@ -167,7 +181,6 @@ exports.createPhieuThu = async (req, res) => {
 
         await hd.save({ session });
 
-        // Đẩy vào danh sách chi tiết của phiếu thu
         danhSachLuu.push({
           hoaDon: hd._id,
           soTienThanhToan: tienTraChoHdNay,
@@ -177,25 +190,43 @@ exports.createPhieuThu = async (req, res) => {
         });
       }
 
-      // Tính toán phần thừa thiếu dựa trên mảng thực tế đã lưu
       const tongKhauTruThucTe = danhSachLuu.reduce((sum, x) => sum + x.soTienThanhToan, 0);
       const conThua = Math.max(0, tongTienThuThucTe - tongKhauTruThucTe);
 
+      // ================= TẠO MÃ PHIẾU THU TỰ ĐỘNG TĂNG =================
       const ngayThuDate = new Date(ngayThu || Date.now());
       const yy = String(ngayThuDate.getFullYear()).slice(-2);
       const mm = String(ngayThuDate.getMonth() + 1).padStart(2, "0");
-      const prefix = `TAN${yy}${mm}`;
+      const prefix = `PT${yy}${mm}`; // Chữ PT thay cho TAN để phân biệt với hóa đơn
 
-      const count = await PhieuThu.countDocuments({ soPhieuThu: { $regex: `^${prefix}` } }).session(session);
-      const soPhieuThu = `${prefix}${String(count + 1).padStart(4, "0")}`;
+      // Tìm phiếu thu mới nhất trong tháng hiện tại
+      const lastPhieuThu = await mongoose.model("PhieuThu").findOne(
+        { soPhieuThu: new RegExp(`^${prefix}`) },
+        { soPhieuThu: 1 }
+      ).sort({ soPhieuThu: -1 }).session(session);
 
-      const newPhieuThu = new PhieuThu({
+      let nextNumber = 1;
+      if (lastPhieuThu && lastPhieuThu.soPhieuThu) {
+        // Cắt lấy 4 số cuối cùng và cộng thêm 1
+        const lastNumber = parseInt(lastPhieuThu.soPhieuThu.slice(-4), 10);
+        if (!isNaN(lastNumber)) {
+          nextNumber = lastNumber + 1;
+        }
+      }
+
+      // Ép thành chuỗi 4 chữ số (VD: 1 -> 0001, 15 -> 0015)
+      const sttStr = nextNumber.toString().padStart(4, "0");
+      const soPhieuThu = `${prefix}${sttStr}`;
+      // =================================================================
+
+      const newPhieuThu = new (mongoose.model("PhieuThu"))({
         soPhieuThu,
+        nhaKhoa: nhaKhoaId, // ✅ ĐÃ FIX LỖI CHÍ MẠNG LÀM CHẾT BÁO CÁO DOANH THU
         danhSachHoaDon: danhSachLuu,
         nguoiTao: req.user?.id || req.user?._id || undefined,
         ngayThu: ngayThuDate,
         soTienThu: tongTienThuThucTe,
-        duocKhauTru: tongKhauTruThucTe, // Số tiền thực tế phân bổ vào các bill
+        duocKhauTru: tongKhauTruThucTe,
         conThua: conThua,
         noiDung,
         phuongThucThanhToan,
@@ -224,6 +255,12 @@ exports.updatePhieuThu = async (req, res) => {
 
       const phieuThu = await PhieuThu.findById(id).session(session);
       if (!phieuThu) throw new Error("Không tìm thấy phiếu thu");
+
+      // Lưu lại danh sách cũ TRƯỚC KHI sửa để dùng cho recalculate
+      const oldDanhSachHoaDon = phieuThu.danhSachHoaDon.map(x => ({
+        hoaDon: x.hoaDon.toString(),
+        soTienThanhToan: x.soTienThanhToan,
+      }));
 
       // 1. Cập nhật các thông tin cơ bản
       if (ngayThu !== undefined) phieuThu.ngayThu = ngayThu;
@@ -256,22 +293,18 @@ exports.updatePhieuThu = async (req, res) => {
           const hdId = item.hoaDon;
           const tienTra = Number(item.soTienThanhToan || 0);
 
-          // Nếu kế toán sửa về 0đ thì bỏ qua hóa đơn này
           if (tienTra <= 0) continue;
 
           const hd = await HoaDon.findById(hdId).session(session);
           if (!hd) throw new Error(`Không tìm thấy hóa đơn: ${hdId}`);
 
-          // Chặn bảo mật: Không cho phép rót tiền lố số nợ của Hóa đơn
           if (tienTra > hd.conLai) {
             throw new Error(`Hóa đơn ${hd.soHoaDon} chỉ còn nợ ${hd.conLai}, bạn không thể thanh toán ${tienTra}.`);
           }
 
           const snapshotGiaTri = hd.giaTriThanhToan || 0;
-          const snapshotDaTTruoc = hd.daThanhToan || 0;
           const snapshotConLaiTruoc = hd.conLai || 0;
 
-          // Rót tiền mới vào
           hd.daThanhToan += tienTra;
           hd.conLai = Math.max(0, hd.giaTriThanhToan - hd.daThanhToan);
 
@@ -285,7 +318,7 @@ exports.updatePhieuThu = async (req, res) => {
             hoaDon: hd._id,
             soTienThanhToan: tienTra,
             giaTriHoaDon: snapshotGiaTri,
-            daTTruocLanNay: snapshotDaTTruoc,
+            daTTruocLanNay: 0,         // tạm, sẽ được ghi đúng ở Bước D
             conLaiTruocLanNay: snapshotConLaiTruoc,
           });
         }
@@ -293,12 +326,44 @@ exports.updatePhieuThu = async (req, res) => {
         // BƯỚC C: CHỐT TỔNG PHIẾU THU
         phieuThu.danhSachHoaDon = danhSachLuuMoi;
         phieuThu.soTienThu = newTotal;
-        phieuThu.duocKhauTru = newTotal; // Số tiền rót thực tế
-        phieuThu.conThua = 0; // Kế toán gõ đích danh từng HĐ nên vĩnh viễn không có tiền thừa
+        phieuThu.duocKhauTru = newTotal;
+        phieuThu.conThua = 0;
       }
 
+      // Save phieuThu TRƯỚC — để ngayThu mới được ghi vào DB
+      // Bước D mới sort đúng thứ tự được
       await phieuThu.save({ session });
-      updatedPhieu = phieuThu;
+
+      // BƯỚC D: RECALCULATE daTTruocLanNay THEO THỨ TỰ NGÀY MỚI
+      const affectedHoaDonIds = [
+        ...new Set([
+          ...oldDanhSachHoaDon.map(x => x.hoaDon),
+          ...(danhSachHoaDon || []).map(x => x.hoaDon.toString()),
+        ])
+      ];
+
+      for (const hdId of affectedHoaDonIds) {
+        const allPT = await PhieuThu.find({
+          "danhSachHoaDon.hoaDon": hdId
+        }).sort({ ngayThu: 1 }).session(session);
+
+        let cumulative = 0;
+        for (const pt of allPT) {
+          const item = pt.danhSachHoaDon.find(
+            x => x.hoaDon.toString() === hdId
+          );
+          if (!item) continue;
+
+          item.daTTruocLanNay = cumulative;
+          item.conLaiTruocLanNay = Math.max(0, item.giaTriHoaDon - cumulative);
+          cumulative += item.soTienThanhToan;
+
+          pt.markModified("danhSachHoaDon");
+          await pt.save({ session });
+        }
+      }
+
+      updatedPhieu = await PhieuThu.findById(phieuThu._id).session(session);
     });
 
     res.json({ success: true, data: updatedPhieu });
@@ -308,7 +373,6 @@ exports.updatePhieuThu = async (req, res) => {
     session.endSession();
   }
 };
-
 /* ================= LẤY CHI TIẾT PHIẾU THU ================= */
 exports.getPhieuThuById = async (req, res) => {
   try {

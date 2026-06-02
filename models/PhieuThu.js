@@ -8,6 +8,12 @@ const phieuThuSchema = new mongoose.Schema(
       index: true,
     },
 
+    // 👉 THÊM DÒNG NÀY VÀO SCHEMA:
+    nhaKhoa: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "NhaKhoa"
+    },
+
     // Hỗ trợ nhiều hóa đơn trong một phiếu thu
     danhSachHoaDon: [
       {
