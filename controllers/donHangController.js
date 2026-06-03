@@ -67,12 +67,12 @@ exports.createDonHang = async (req, res) => {
 
         while (retry < 3) {
             try {
-                const autoTrangThai = resolveTrangThaiTuYeuCauThu(danhSachSanPham, req.body.trangThai || "Chờ xử lý");
                 const newDonHang = new DonHang({
                     ...req.body,
                     danhSachSanPham, // Chỉ lưu thông tin sản xuất, chưa snapshot giá
                     maDonHang,
-                    trangThai: autoTrangThai,
+                    trangThai: "Chờ xử lý",
+                    buocThuHienTai: null,
                     nhatKyChinhSua: [{
                         nguoiThuc: req.body.nguoiThucDuyet || "Điều Phối",
                         hanhDong: "Tạo đơn hàng",
@@ -460,12 +460,6 @@ exports.updateDonHang = async (req, res) => {
         // Xây dựng mô tả chi tiết những gì đã thay đổi
         const chiTietThayDoi = await buildChinhSuaLog(donHangHienTai, updateData);
 
-        // Nếu cập nhật danh sách sản phẩm → tự động xác định trạng thái "Đang thử"
-        if ("danhSachSanPham" in updateData) {
-            const baseTrangThai = updateData.trangThai || donHangHienTai.trangThai;
-            updateData.trangThai = resolveTrangThaiTuYeuCauThu(updateData.danhSachSanPham, baseTrangThai);
-        }
-
         const updateOp = { $set: updateData };
         if (nhatKyLogEntry) {
             updateOp.$push = {
@@ -499,6 +493,46 @@ exports.updateDonHang = async (req, res) => {
         res.status(200).json({ success: true, data: updatedDonHangObj });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// [PATCH] Cập nhật trạng thái đơn hàng theo luồng yêu cầu thử
+exports.updateTrangThai = async (req, res) => {
+    try {
+        const { trangThai, buocThuHienTai, nguoiThuc } = req.body;
+        const VALID_TRANG_THAI = ["Chờ xử lý", "Đang sản xuất", "Đang thử", "Hoàn thành", "Đã giao"];
+        if (!trangThai || !VALID_TRANG_THAI.includes(trangThai)) {
+            return res.status(400).json({ success: false, message: "Trạng thái không hợp lệ" });
+        }
+        const updateSet = { trangThai };
+        if (buocThuHienTai !== undefined && buocThuHienTai !== null) {
+            updateSet.buocThuHienTai = buocThuHienTai;
+        }
+        const updated = await DonHang.findByIdAndUpdate(
+            req.params.id,
+            {
+                $set: updateSet,
+                $push: {
+                    nhatKyChinhSua: {
+                        nguoiThuc: nguoiThuc || "Điều Phối",
+                        hanhDong: `Chuyển trạng thái → "${trangThai}"`,
+                        thoiGian: new Date(),
+                    },
+                },
+            },
+            { new: true }
+        )
+            .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe")
+            .populate("bacSi", "hoVaTen soDienThoai email")
+            .populate("benhNhan", "hoVaTen soHoSo soDienThoai")
+            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh baoHanhMacDinh")
+            .populate("danhSachSanPham.donHangCu");
+        if (!updated) {
+            return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
+        }
+        return res.status(200).json({ success: true, data: updated });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: "Lỗi cập nhật trạng thái", error: error.message });
     }
 };
 

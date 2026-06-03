@@ -135,7 +135,12 @@ const donHangSchema = new mongoose.Schema(
         daXuatHoaDon: {
             type: Boolean,
             default: false,
-        }
+        },
+        // Bước thử hiện tại trong luồng yêu cầu thử (0-based index)
+        buocThuHienTai: {
+            type: Number,
+            default: null,
+        },
     },
     { timestamps: true }
 );
