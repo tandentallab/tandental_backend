@@ -10,6 +10,7 @@ router.get(
 	dashboardController.getChartStats
 );
 
+// SSE endpoint — không dùng checkPermission vì SSE giữ kết nối lâu dài
 router.get(
 	'/realtime-stats',
 	dashboardController.getRealtimeStats

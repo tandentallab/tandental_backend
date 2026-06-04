@@ -271,124 +271,152 @@ exports.getChartStats = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// API: GET REALTIME STATS (Thống kê realtime hôm nay + doanh thu tháng)
+// HELPER: Lấy snapshot dữ liệu realtime hôm nay
+// ─────────────────────────────────────────────────────────────────────────────
+const BangGia = require('../models/BangGia');
+
+const fetchRealtimeSnapshot = async () => {
+    const now = dayjs().tz(VN_TZ);
+    const todayStart = now.startOf("day").toDate();
+    const todayEnd = now.endOf("day").toDate();
+
+    const ALL_LOAI_DON = ["Mới", "Hàng sửa", "Hàng làm lại", "Hàng bảo hành"];
+    const ALL_NHOM = ["Report Hợp Kim", "Report Toàn Sứ"];
+
+    // ── 1. Số đơn hàng hôm nay theo loaiDon (đếm đơn distinct) ──────────────
+    const donHangRaw = await DonHang.aggregate([
+        { $match: { ngayNhan: { $gte: todayStart, $lte: todayEnd } } },
+        { $unwind: "$danhSachSanPham" },
+        {
+            $group: {
+                _id: "$danhSachSanPham.loaiDon",
+                donHangIds: { $addToSet: "$_id" },
+            },
+        },
+        {
+            $project: {
+                loaiDon: "$_id",
+                soDonHang: { $size: "$donHangIds" },
+                _id: 0,
+            },
+        },
+    ]);
+
+    const donHangHomNay = ALL_LOAI_DON.reduce((acc, loai) => {
+        acc[loai] = donHangRaw.find((r) => r.loaiDon === loai)?.soDonHang ?? 0;
+        return acc;
+    }, {});
+
+    // ── 2. Số lượng răng hôm nay theo nhóm SP + loaiDon ─────────────────────
+    const rangRaw = await DonHang.aggregate([
+        { $match: { ngayNhan: { $gte: todayStart, $lte: todayEnd } } },
+        { $unwind: "$danhSachSanPham" },
+        {
+            $lookup: {
+                from: "sanphams",
+                localField: "danhSachSanPham.sanPham",
+                foreignField: "_id",
+                as: "spInfo",
+            },
+        },
+        { $unwind: "$spInfo" },
+        { $match: { "spInfo.nhomSanPham": { $in: ALL_NHOM } } },
+        {
+            $group: {
+                _id: {
+                    nhomSanPham: "$spInfo.nhomSanPham",
+                    loaiDon: "$danhSachSanPham.loaiDon",
+                },
+                soLuong: { $sum: "$danhSachSanPham.soLuong" },
+            },
+        },
+    ]);
+
+    const rangHomNay = ALL_NHOM.reduce((acc, nhom) => {
+        acc[nhom] = ALL_LOAI_DON.reduce((inner, loai) => {
+            inner[loai] =
+                rangRaw.find(
+                    (r) => r._id.nhomSanPham === nhom && r._id.loaiDon === loai
+                )?.soLuong ?? 0;
+            return inner;
+        }, {});
+        return acc;
+    }, {});
+
+    // ── 3. Doanh thu dự kiến hôm nay ────────────────────────────────────────
+    // Lấy đơn giá từ BangGia (riêng) nếu có, ngược lại dùng donGiaChung của SanPham
+    const doanhThuRaw = await DonHang.aggregate([
+        { $match: { ngayNhan: { $gte: todayStart, $lte: todayEnd } } },
+        { $unwind: "$danhSachSanPham" },
+        {
+            $lookup: {
+                from: "sanphams",
+                localField: "danhSachSanPham.sanPham",
+                foreignField: "_id",
+                as: "spInfo",
+            },
+        },
+        { $unwind: "$spInfo" },
+        {
+            $lookup: {
+                from: "banggia",
+                let: { nhaKhoaId: "$nhaKhoa", sanPhamId: "$danhSachSanPham.sanPham" },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $and: [
+                                    { $eq: ["$nhaKhoaId", "$$nhaKhoaId"] },
+                                    { $eq: ["$sanPhamId", "$$sanPhamId"] },
+                                ],
+                            },
+                        },
+                    },
+                    { $limit: 1 },
+                ],
+                as: "bangGiaInfo",
+            },
+        },
+        {
+            $addFields: {
+                donGiaThucTe: {
+                    $cond: [
+                        { $gt: [{ $size: "$bangGiaInfo" }, 0] },
+                        { $arrayElemAt: ["$bangGiaInfo.donGia", 0] },
+                        "$spInfo.donGiaChung",
+                    ],
+                },
+            },
+        },
+        {
+            $group: {
+                _id: null,
+                doanhThuDuKien: {
+                    $sum: { $multiply: ["$danhSachSanPham.soLuong", "$donGiaThucTe"] },
+                },
+            },
+        },
+    ]);
+
+    const doanhThuDuKien = doanhThuRaw[0]?.doanhThuDuKien ?? 0;
+
+    return {
+        ngay: now.format("DD/MM/YYYY"),
+        donHangHomNay,
+        rangHomNay,
+        doanhThuDuKien,
+    };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API: GET REALTIME STATS — SSE (Server-Sent Events)
 // GET /api/dashboard/realtime-stats
+// Client nhận push mỗi 30s, không cần reload
 // ─────────────────────────────────────────────────────────────────────────────
 exports.getRealtimeStats = async (req, res) => {
     try {
-        const HoaDon = require('../models/HoaDon');
-
-        const now = dayjs().tz(VN_TZ);
-        const todayStart = now.startOf("day").toDate();
-        const todayEnd = now.endOf("day").toDate();
-        const monthStart = now.startOf("month").toDate();
-        const monthEnd = now.endOf("month").toDate();
-
-        const ALL_LOAI_DON = ["Mới", "Hàng sửa", "Hàng làm lại", "Hàng bảo hành"];
-        const ALL_NHOM = ["Report Hợp Kim", "Report Toàn Sứ"];
-
-        // ── 1. Số đơn hàng hôm nay theo loaiDon (đếm đơn distinct) ──────────
-        const donHangRaw = await DonHang.aggregate([
-            { $match: { ngayNhan: { $gte: todayStart, $lte: todayEnd } } },
-            { $unwind: "$danhSachSanPham" },
-            {
-                $group: {
-                    _id: "$danhSachSanPham.loaiDon",
-                    donHangIds: { $addToSet: "$_id" },
-                },
-            },
-            {
-                $project: {
-                    loaiDon: "$_id",
-                    soDonHang: { $size: "$donHangIds" },
-                    _id: 0,
-                },
-            },
-        ]);
-
-        const donHangHomNay = ALL_LOAI_DON.reduce((acc, loai) => {
-            acc[loai] = donHangRaw.find((r) => r.loaiDon === loai)?.soDonHang ?? 0;
-            return acc;
-        }, {});
-
-        // ── 2. Số lượng răng hôm nay theo nhóm SP + loaiDon ─────────────────
-        const rangRaw = await DonHang.aggregate([
-            { $match: { ngayNhan: { $gte: todayStart, $lte: todayEnd } } },
-            { $unwind: "$danhSachSanPham" },
-            {
-                $lookup: {
-                    from: "sanphams",
-                    localField: "danhSachSanPham.sanPham",
-                    foreignField: "_id",
-                    as: "spInfo",
-                },
-            },
-            { $unwind: "$spInfo" },
-            {
-                $match: {
-                    "spInfo.nhomSanPham": { $in: ALL_NHOM },
-                },
-            },
-            {
-                $group: {
-                    _id: {
-                        nhomSanPham: "$spInfo.nhomSanPham",
-                        loaiDon: "$danhSachSanPham.loaiDon",
-                    },
-                    soLuong: { $sum: "$danhSachSanPham.soLuong" },
-                },
-            },
-        ]);
-
-        const rangHomNay = ALL_NHOM.reduce((acc, nhom) => {
-            acc[nhom] = ALL_LOAI_DON.reduce((inner, loai) => {
-                inner[loai] =
-                    rangRaw.find(
-                        (r) => r._id.nhomSanPham === nhom && r._id.loaiDon === loai
-                    )?.soLuong ?? 0;
-                return inner;
-            }, {});
-            return acc;
-        }, {});
-
-        // ── 3. Doanh thu dự kiến tháng này (tổng giaTriThanhToan HoaDon) ────
-        const doanhThuRaw = await HoaDon.aggregate([
-            {
-                $match: {
-                    ngayXuatHoaDon: { $gte: monthStart, $lte: monthEnd },
-                    trangThai: { $ne: "Lưu tạm" },
-                },
-            },
-            {
-                $group: {
-                    _id: null,
-                    tongDoanhThu: { $sum: "$giaTriThanhToan" },
-                    tongDaThu: { $sum: "$daThanhToan" },
-                    tongConLai: { $sum: "$conLai" },
-                },
-            },
-        ]);
-
-        const doanhThuThangNay = doanhThuRaw[0] ?? {
-            tongDoanhThu: 0,
-            tongDaThu: 0,
-            tongConLai: 0,
-        };
-
-        return res.status(200).json({
-            success: true,
-            data: {
-                ngay: now.format("DD/MM/YYYY"),
-                thang: now.format("MM/YYYY"),
-                donHangHomNay,
-                rangHomNay,
-                doanhThuDuKienThangNay: {
-                    tongDoanhThu: doanhThuThangNay.tongDoanhThu,
-                    tongDaThu: doanhThuThangNay.tongDaThu,
-                    tongConLai: doanhThuThangNay.tongConLai,
-                },
-            },
-        });
+        const snapshot = await fetchRealtimeSnapshot();
+        return res.status(200).json({ success: true, data: snapshot });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
     }
