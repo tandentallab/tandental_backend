@@ -10,4 +10,9 @@ router.get(
 	dashboardController.getChartStats
 );
 
+router.get(
+	'/realtime-stats',
+	dashboardController.getRealtimeStats
+);
+
 module.exports = router;
