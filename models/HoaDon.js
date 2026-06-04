@@ -82,12 +82,6 @@ const hoaDonSchema = new mongoose.Schema(
         },
       },
     ],
-
-    /* ================= TỔNG HÓA ĐƠN ================= */
-    // tongCong        = Σ tongCongSanPham (Phát sinh thuần trong tháng này)
-    // chietKhau       = số tiền chiết khấu (tính từ tongCong)
-    // thue            = (tongCong - chietKhau) × %  → lưu số tiền
-    // giaTriThanhToan = TỔNG TIỀN CẦN THANH TOÁN (Đã bao gồm: Phát sinh tháng này + Nợ đầu kỳ gối đầu)
     tongCong: { type: Number, default: 0 },
     chietKhau: { type: Number, default: 0 },
     thue: { type: Number, default: 0 },
@@ -95,13 +89,10 @@ const hoaDonSchema = new mongoose.Schema(
 
 
 
-    // UI truyền xuống: giaTriThanhToan = (tongCong - chietKhau) + thue + chiPhiKhac
     giaTriThanhToan: { type: Number, default: 0 },
 
-    // Tổng số tiền lũy kế đã trả cho đợt công nợ này (bao gồm nhiều lần tạo phiếu thu)
     daThanhToan: { type: Number, default: 0 },
 
-    // Còn lại phải thanh toán (Công thức: giaTriThanhToan - daThanhToan)
     conLai: { type: Number, default: 0 },
 
 
@@ -136,6 +127,14 @@ const hoaDonSchema = new mongoose.Schema(
 
 // Tối ưu hóa tốc độ truy vấn lọc hóa đơn theo chu kỳ kế toán
 hoaDonSchema.index({ nhaKhoa: 1, denNgay: -1 });
+
+// 🔥 THÊM MỚI: Tối ưu cho API getHoaDonById (Tính nợ đầu kỳ siêu tốc)
+// Cover chính xác query: lọc theo nhaKhoa, trangThai, và so sánh ngày xuất/createdAt
+hoaDonSchema.index({ nhaKhoa: 1, trangThai: 1, ngayXuatHoaDon: -1, createdAt: -1 });
+
+// 🔥 THÊM MỚI: Tối ưu cho API getAllHoaDonAdmin (List & Phân trang)
+// Cover cho bộ lọc trạng thái và sắp xếp mặc định
+hoaDonSchema.index({ trangThai: 1, ngayXuatHoaDon: -1, createdAt: -1 });
 
 hoaDonSchema.pre("save", function () {
   // 1. Tính toán số tiền Còn lại
