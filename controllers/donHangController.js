@@ -598,6 +598,7 @@ exports.getThongKe = async (req, res) => {
             // 1. Đơn có henGiao rơi vào hôm nay (bất kể trạng thái)
             DonHang.countDocuments({
                 henGiao: { $gte: startOfToday, $lte: endOfToday },
+                trangThai: { $nin: ["Hoàn thành", "Đã giao"] },
             }),
 
             // 2. Đơn trễ hẹn giao: henGiao đã qua nhưng chưa hoàn thành / chưa giao
