@@ -468,15 +468,11 @@ exports.getAllHoaDonAdmin = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    // 🔥 1. Đón lấy loaiHan từ req.query
     const { trangThai, search, nhaKhoaId, fromDate, toDate, loaiHan } = req.query;
 
     let query = {
       soHoaDon: { $not: /^SDDK/i }
     };
-
-    const trangThaiQuery = buildTrangThaiQuery(trangThai);
-    if (trangThaiQuery) query.trangThai = trangThaiQuery;
 
     if (nhaKhoaId && mongoose.Types.ObjectId.isValid(nhaKhoaId)) {
       query.nhaKhoa = nhaKhoaId;
@@ -493,26 +489,18 @@ exports.getAllHoaDonAdmin = async (req, res) => {
       }
     }
 
-    // 🔥 LOGIC MỚI: LỌC NGẦM THEO THẺ THỐNG KÊ
+    // --- LỌC NGẦM THEO THẺ THỐNG KÊ ---
     if (loaiHan === "conNo" || loaiHan === "treHan" || loaiHan === "chuaDenHan") {
-
-      // 1. Ép cứng ngầm: Chỉ lấy các hóa đơn còn nợ (Không cần FE phải gửi lên)
       query.trangThai = { $in: ["Chưa thanh toán", "Thanh toán một phần"] };
 
-      // 2. Lọc thêm ngày xuất hóa đơn nếu là Trễ hạn / Chưa đến hạn
       if (loaiHan === "treHan" || loaiHan === "chuaDenHan") {
         const moc20NgayTruoc = dayjs().tz(VN_TZ).subtract(20, 'day').endOf('day').toDate();
         if (!query.ngayXuatHoaDon) query.ngayXuatHoaDon = {};
 
-        if (loaiHan === "treHan") {
-          query.ngayXuatHoaDon.$lt = moc20NgayTruoc;
-        } else if (loaiHan === "chuaDenHan") {
-          query.ngayXuatHoaDon.$gte = moc20NgayTruoc;
-        }
+        if (loaiHan === "treHan") query.ngayXuatHoaDon.$lt = moc20NgayTruoc;
+        else if (loaiHan === "chuaDenHan") query.ngayXuatHoaDon.$gte = moc20NgayTruoc;
       }
-
     } else {
-      // Nếu KHÔNG bấm thẻ thống kê, thì mới cho phép dùng bộ lọc Trạng thái thủ công của Kế toán
       const trangThaiQuery = buildTrangThaiQuery(trangThai);
       if (trangThaiQuery) query.trangThai = trangThaiQuery;
     }
@@ -520,9 +508,13 @@ exports.getAllHoaDonAdmin = async (req, res) => {
     // --- LỌC THEO TỪ KHÓA TÌM KIẾM ---
     if (search && search.trim() !== "") {
       const keyword = search.trim();
-      query.$or = [
-        { soHoaDon: { $regex: keyword, $options: "i" } },
-        {
+      let orConditions = [
+        { soHoaDon: { $regex: keyword, $options: "i" } }
+      ];
+
+      // TỐI ƯU: Chỉ chạy $expr (Full Scan) nếu từ khóa giống format mã nội bộ 'TAN...'
+      if (keyword.toUpperCase().startsWith("TAN")) {
+        orConditions.push({
           $expr: {
             $regexMatch: {
               input: {
@@ -532,18 +524,24 @@ exports.getAllHoaDonAdmin = async (req, res) => {
               options: "i",
             },
           },
-        },
-      ];
+        });
+      }
+      query.$or = orConditions;
     }
 
-    const total = await HoaDon.countDocuments(query);
-    const danhSach = await HoaDon.find(query)
-      .populate("nhaKhoa", "hoVaTen tinh")
-      .populate("danhSachSanPham.donHang", "maDonHang ngayNhan bacSi benhNhan")
-      .populate("danhSachSanPham.sanPham", "tenSanPham maSanPham")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    // Thực thi song song Count và Find
+    const [total, danhSach] = await Promise.all([
+      HoaDon.countDocuments(query),
+      HoaDon.find(query)
+        // TỐI ƯU 1: CHỈ trả về các field UI thực sự cần, cắt bỏ mảng danhSachSanPham khổng lồ
+        .select("ngayXuatHoaDon soHoaDon nhaKhoa tongCong chietKhau giaTriThanhToan daThanhToan conLai chiPhiKhac trangThai ghiChuChoKhachHang ghiChuNoiBo createdAt")
+        // TỐI ƯU 2: Bỏ deep populate, chỉ lấy tên nhaKhoa
+        .populate("nhaKhoa", "hoVaTen tenNhaKhoa tinh")
+        .sort({ ngayXuatHoaDon: -1, createdAt: -1 }) // Khớp với Compound Index
+        .skip(skip)
+        .limit(limit)
+        .lean() // TỐI ƯU 3: Bỏ qua overhead của Mongoose Document, trả về raw JSON
+    ]);
 
     res.json({
       success: true,
@@ -588,6 +586,7 @@ exports.getHoaDonById = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // TỐI ƯU 1: Dùng .lean() vì API này chỉ đọc dữ liệu
     const hoaDon = await HoaDon.findById(id)
       .populate("nhaKhoa", "tenNhaKhoa hoVaTen soDienThoai email diaChi tinh")
       .populate({
@@ -598,53 +597,53 @@ exports.getHoaDonById = async (req, res) => {
           { path: "benhNhan", select: "hoVaTen soDienThoai email" },
         ],
       })
-      .populate("danhSachSanPham.sanPham", "tenSanPham maSanPham");
+      .populate("danhSachSanPham.sanPham", "tenSanPham maSanPham")
+      .lean();
 
     if (!hoaDon) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy hóa đơn",
-      });
+      return res.status(404).json({ success: false, message: "Không tìm thấy hóa đơn" });
     }
 
-    const congNoNhaKhoa = await getCongNoNhaKhoa(
-      hoaDon.nhaKhoa._id
-    );
-    // 🔥 LOGIC CHUẨN NGHIỆP VỤ: Tính Nợ đầu kỳ động dựa trên NGÀY XUẤT HÓA ĐƠN
-    const cacHoaDonTruoc = await HoaDon.find({
-      nhaKhoa: hoaDon.nhaKhoa._id,
-      _id: { $ne: hoaDon._id }, // Trừ chính hóa đơn đang xem ra
-      trangThai: { $nin: ["Đã thanh toán", "Lưu tạm"] },
-      $or: [
-        // Điều kiện 1: Ưu tiên tuyệt đối lấy các hóa đơn có Ngày Xuất cũ hơn
-        { ngayXuatHoaDon: { $lt: hoaDon.ngayXuatHoaDon } },
+    // Thực thi song song việc lấy công nợ nha khoa và tính nợ đầu kỳ
+    const [congNoNhaKhoa, aggResult] = await Promise.all([
+      getCongNoNhaKhoa(hoaDon.nhaKhoa._id),
 
-        // Điều kiện 2: Xử lý ngoại lệ nếu có 2 hóa đơn CÙNG CHUNG 1 NGÀY XUẤT
-        // -> Hóa đơn nào được nhập vào phần mềm trước (createdAt) thì được tính là nợ cũ
+      // TỐI ƯU 2: Chuyển logic tính Nợ đầu kỳ xuống tận Database (Aggregation)
+      HoaDon.aggregate([
         {
-          ngayXuatHoaDon: hoaDon.ngayXuatHoaDon,
-          createdAt: { $lt: hoaDon.createdAt }
+          $match: {
+            nhaKhoa: hoaDon.nhaKhoa._id,
+            _id: { $ne: hoaDon._id },
+            trangThai: { $nin: ["Đã thanh toán", "Lưu tạm"] },
+            $or: [
+              { ngayXuatHoaDon: { $lt: hoaDon.ngayXuatHoaDon } },
+              { ngayXuatHoaDon: hoaDon.ngayXuatHoaDon, createdAt: { $lt: hoaDon.createdAt } }
+            ]
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalDebt: { $sum: "$conLai" }
+          }
         }
-      ]
-    });
+      ])
+    ]);
 
-    // Cộng dồn tiền còn nợ của các hóa đơn cũ
-    const noDauKyDong = cacHoaDonTruoc.reduce((tong, hd) => tong + (hd.conLai || 0), 0);
+    // Lấy con số tổng từ kết quả Aggregation (Nếu không có nợ cũ thì trả về 0)
+    const noDauKyDong = aggResult.length > 0 ? aggResult[0].totalDebt : 0;
 
     res.json({
       success: true,
       data: {
-        ...hoaDon.toObject(),
+        ...hoaDon, // Đã là object thuần do dùng .lean()
         congNoNhaKhoa,
-        noDauKy: noDauKyDong, // Con số này giờ đây đã chuẩn 100% theo ngày xuất
+        noDauKy: noDauKyDong,
         tongCanThanhToan: hoaDon.giaTriThanhToan + noDauKyDong
       },
     });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: err.message,
-    });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
