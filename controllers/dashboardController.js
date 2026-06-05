@@ -358,6 +358,7 @@ const fetchRealtimeSnapshot = async () => {
             },
         },
         { $unwind: "$spInfo" },
+        { $match: { "spInfo.nhomSanPham": { $in: ["Report Hợp Kim", "Report Toàn Sứ"] } } },
         {
             $lookup: {
                 from: "banggia",
