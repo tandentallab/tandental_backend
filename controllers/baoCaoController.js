@@ -156,6 +156,105 @@ exports.getDetailedProductReport = async (req, res) => {
     }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// API 3: Sản lượng theo khách hàng (Nha khoa)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.getSanLuongTheoKhachHang = async (req, res) => {
+    try {
+        const { startDate, endDate, loaiDon } = req.query;
+        const { start, end } = normalizeRange(startDate, endDate);
+
+        let loaiDonArray = ["Mới"];
+        if (loaiDon) {
+            if (Array.isArray(loaiDon)) {
+                loaiDonArray = loaiDon;
+            } else {
+                loaiDonArray = loaiDon.split(",").map(item => item.trim());
+            }
+        }
+
+        const reportData = await DonHang.aggregate([
+            // Bước 1: Lọc theo ngày nhận
+            { $match: { ngayNhan: { $gte: start, $lte: end } } },
+
+            // Bước 2: Tách mảng sản phẩm ra để tính số lượng
+            { $unwind: "$danhSachSanPham" },
+
+            // Bước 3: Lọc theo loại đơn
+            { $match: { "danhSachSanPham.loaiDon": { $in: loaiDonArray } } },
+
+            // Bước 4: Gom nhóm theo _id nha khoa
+            {
+                $group: {
+                    _id: "$nhaKhoa",
+                    tongSanLuong: { $sum: "$danhSachSanPham.soLuong" }
+                }
+            },
+
+            // Bước 5: Nối bảng để lấy thông tin Khách hàng
+            {
+                $lookup: {
+                    from: "nhakhoas", // Chuẩn tên collection trong DB
+                    localField: "_id",
+                    foreignField: "_id",
+                    as: "nhaKhoaInfo"
+                }
+            },
+            { $unwind: { path: "$nhaKhoaInfo", preserveNullAndEmptyArrays: true } },
+
+            // 🌟 TÙY CHỌN QUAN TRỌNG: 
+            // Nếu muốn ẨN HOÀN TOÀN các đơn hàng của Khách hàng đã bị xóa khỏi báo cáo, 
+            // bạn chỉ cần bỏ comment (//) ở dòng ngay bên dưới:
+            // { $match: { "nhaKhoaInfo._id": { $exists: true } } },
+
+            {
+                $project: {
+                    _id: 0,
+                    nhaKhoaId: "$_id",
+                    tongSanLuong: 1,
+                    // Dùng $let để gán biến và $trim để lọc sạch dấu cách rác " "
+                    tenNhaKhoa: {
+                        $let: {
+                            vars: {
+                                hvt: { $trim: { input: { $ifNull: ["$nhaKhoaInfo.hoVaTen", ""] } } },
+                                tgd: { $trim: { input: { $ifNull: ["$nhaKhoaInfo.tenGiaoDich", ""] } } }
+                            },
+                            in: {
+                                $cond: [
+                                    { $ne: ["$$hvt", ""] }, // Ưu tiên 1: Nếu Họ và Tên có chữ -> LẤY
+                                    "$$hvt",
+                                    {
+                                        $cond: [
+                                            { $ne: ["$$tgd", ""] }, // Ưu tiên 2: Nếu trống Họ Tên mà có Tên Giao Dịch -> LẤY
+                                            "$$tgd",
+                                            "Khách hàng đã xóa (Mồ côi)" // Cả 2 đều trống trơn -> MỒ CÔI
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+
+            // Bước 7: Sắp xếp giảm dần theo sản lượng
+            { $sort: { tongSanLuong: -1 } }
+        ]);
+
+        // Tính tổng toàn bộ hiển thị dưới chân bảng
+        const tongTatCa = reportData.reduce((sum, item) => sum + item.tongSanLuong, 0);
+
+        res.status(200).json({
+            success: true,
+            loaiDonDaLoc: loaiDonArray,
+            tongTatCa: tongTatCa,
+            data: reportData
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 exports.getDoanhThuThang = async (req, res) => {
     try {
         const thang = parseInt(req.query.thang) || new Date().getMonth() + 1;
