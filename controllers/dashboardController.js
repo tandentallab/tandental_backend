@@ -283,29 +283,42 @@ const fetchRealtimeSnapshot = async () => {
     const ALL_LOAI_DON = ["Mới", "Hàng sửa", "Hàng làm lại", "Hàng bảo hành"];
     const ALL_NHOM = ["Report Hợp Kim", "Report Toàn Sứ"];
 
-    // ── 1. Số đơn hàng hôm nay theo loaiDon (đếm đơn distinct) ──────────────
+    // ── 1. Số đơn hàng hôm nay theo loaiDon ────────────────────────────────
+    // "Mới"         = đơn mà TẤT CẢ item đều là "Mới" (nhất quán với chart2)
+    // Còn lại       = đơn có ÍT NHẤT 1 item thuộc loại đó
     const donHangRaw = await DonHang.aggregate([
         { $match: { ngayNhan: { $gte: todayStart, $lte: todayEnd } } },
-        { $unwind: "$danhSachSanPham" },
         {
-            $group: {
-                _id: "$danhSachSanPham.loaiDon",
-                donHangIds: { $addToSet: "$_id" },
+            $addFields: {
+                loaiDonSet: { $setUnion: "$danhSachSanPham.loaiDon" },
+                soSPKhongMoi: {
+                    $size: {
+                        $filter: {
+                            input: "$danhSachSanPham",
+                            as: "sp",
+                            cond: { $ne: ["$$sp.loaiDon", "Mới"] },
+                        },
+                    },
+                },
             },
         },
         {
-            $project: {
-                loaiDon: "$_id",
-                soDonHang: { $size: "$donHangIds" },
-                _id: 0,
+            $facet: {
+                donMoi: [{ $match: { soSPKhongMoi: 0 } }, { $count: "total" }],
+                hangSua: [{ $match: { loaiDonSet: "Hàng sửa" } }, { $count: "total" }],
+                hangLamLai: [{ $match: { loaiDonSet: "Hàng làm lại" } }, { $count: "total" }],
+                hangBaoHanh: [{ $match: { loaiDonSet: "Hàng bảo hành" } }, { $count: "total" }],
             },
         },
     ]);
 
-    const donHangHomNay = ALL_LOAI_DON.reduce((acc, loai) => {
-        acc[loai] = donHangRaw.find((r) => r.loaiDon === loai)?.soDonHang ?? 0;
-        return acc;
-    }, {});
+    const facet = donHangRaw[0] ?? {};
+    const donHangHomNay = {
+        "Mới": facet.donMoi?.[0]?.total ?? 0,
+        "Hàng sửa": facet.hangSua?.[0]?.total ?? 0,
+        "Hàng làm lại": facet.hangLamLai?.[0]?.total ?? 0,
+        "Hàng bảo hành": facet.hangBaoHanh?.[0]?.total ?? 0,
+    };
 
     // ── 2. Số lượng răng hôm nay theo nhóm SP + loaiDon ─────────────────────
     const rangRaw = await DonHang.aggregate([
