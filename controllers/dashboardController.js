@@ -343,11 +343,12 @@ const fetchRealtimeSnapshot = async () => {
         return acc;
     }, {});
 
-    // ── 3. Doanh thu dự kiến hôm nay ────────────────────────────────────────
+    // ── 3. Doanh thu dự kiến hôm nay (chỉ tính đơn Mới) ────────────────────
     // Lấy đơn giá từ BangGia (riêng) nếu có, ngược lại dùng donGiaChung của SanPham
     const doanhThuRaw = await DonHang.aggregate([
         { $match: { ngayNhan: { $gte: todayStart, $lte: todayEnd } } },
         { $unwind: "$danhSachSanPham" },
+        { $match: { "danhSachSanPham.loaiDon": "Mới" } },
         {
             $lookup: {
                 from: "sanphams",
