@@ -374,7 +374,7 @@ const fetchRealtimeSnapshot = async () => {
         { $match: { "spInfo.nhomSanPham": { $in: ["Report Hợp Kim", "Report Toàn Sứ"] } } },
         {
             $lookup: {
-                from: "banggia",
+                from: "banggias",
                 let: { nhaKhoaId: "$nhaKhoa", sanPhamId: "$danhSachSanPham.sanPham" },
                 pipeline: [
                     {
