@@ -20,7 +20,7 @@ const sanPhamSchema = new mongoose.Schema(
         loaiTinh: {
             type: String,
             enum: {
-                values: ["Răng", "Răng (không đếm)", "Bán hàm", "Hàm", "Khác"],
+                values: ["Răng", "Răng (không đếm)", "Bán hàm", "Hàm trên dưới", "Hàm trên", "Hàm dưới", "Khác"],
                 message: "{VALUE} không phải là loại tính hợp lệ",
             },
             required: [true, "Vui lòng chọn loại tính"],
