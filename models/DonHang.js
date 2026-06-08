@@ -54,6 +54,10 @@ const donHangSchema = new mongoose.Schema(
                         soRang: [{ type: Number }], // VD: [11] (Rời) hoặc [12, 13, 14] (Cầu)
                     },
                 ],
+                viTriText: {
+                    type: String,
+                    default: "",
+                },
                 soLuong: {
                     type: Number,
                     default: 1,
