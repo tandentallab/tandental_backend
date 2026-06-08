@@ -50,7 +50,7 @@ const buildPublicPhieuBaoHanh = (phieu) => {
     mauTheTi: phieu.mauTheTi,
     nhaKhoa: phieu.nhaKhoa
       ? {
-          ten: phieu.nhaKhoa.tenGiaoDich || phieu.nhaKhoa.hoVaTen,
+          ten: phieu.nhakhoabh || phieu.nhaKhoa.tenGiaoDich || phieu.nhaKhoa.hoVaTen,
           tenGiaoDich: phieu.nhaKhoa.tenGiaoDich,
           hoVaTen: phieu.nhaKhoa.hoVaTen,
           diaChi: phieu.nhaKhoa.diaChiCuThe || phieu.nhaKhoa.diaChi,
@@ -59,7 +59,7 @@ const buildPublicPhieuBaoHanh = (phieu) => {
       : null,
     benhNhan: phieu.benhNhan
       ? {
-          ten: phieu.benhNhan.hoVaTen,
+          ten: phieu.benhnhanbh || phieu.benhNhan.hoVaTen,
           hoVaTen: phieu.benhNhan.hoVaTen,
           soDienThoai: phieu.benhNhan.soDienThoai,
           email: phieu.benhNhan.email,
@@ -68,10 +68,13 @@ const buildPublicPhieuBaoHanh = (phieu) => {
       : null,
     bacSi: phieu.bacSi
       ? {
-          ten: phieu.bacSi.hoVaTen,
+          ten: phieu.bacsibh || phieu.bacSi.hoVaTen,
           hoVaTen: phieu.bacSi.hoVaTen,
         }
       : null,
+    nhakhoabh: phieu.nhakhoabh || (phieu.nhaKhoa ? (phieu.nhaKhoa.tenGiaoDich || phieu.nhaKhoa.hoVaTen) : ""),
+    bacsibh: phieu.bacsibh || (phieu.bacSi ? phieu.bacSi.hoVaTen : ""),
+    benhnhanbh: phieu.benhnhanbh || (phieu.benhNhan ? phieu.benhNhan.hoVaTen : ""),
     soDienThoai: phieu.soDienThoai || phieu.benhNhan?.soDienThoai || null,
     ghiChu: phieu.ghiChu,
     // Status info
