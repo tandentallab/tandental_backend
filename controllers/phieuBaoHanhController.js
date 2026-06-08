@@ -24,7 +24,7 @@ const generateUniqueQRCode = async () => {
 exports.createPhieuBaoHanh = async (req, res) => {
   try {
     // 1. SỬA ĐỔI: Khai báo mauTheId thay vì mauTheTi
-    const { donHang, danhSachBaoHanh, mauTheId, ghiChu } = req.body;
+    const { donHang, danhSachBaoHanh, mauTheId, ghiChu, nhakhoabh, bacsibh, benhnhanbh } = req.body;
 
     // 2. Kiểm tra bắt buộc mẫu thẻ
     if (!mauTheId) {
@@ -96,6 +96,9 @@ exports.createPhieuBaoHanh = async (req, res) => {
       mauThe: mauTheId, // Lưu ID của mẫu thẻ (ObjectId)
       soDienThoai: nhaKhoaRecord?.soDienThoai || "",
       ghiChu: ghiChu || "",
+      nhakhoabh: nhakhoabh || "",
+      bacsibh: bacsibh || "",
+      benhnhanbh: benhnhanbh || "",
     };
 
     if (phieu) {

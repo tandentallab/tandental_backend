@@ -67,6 +67,18 @@ const phieuBaoHanhSchema = new mongoose.Schema(
     },
     soDienThoai: String,
     ghiChu: String,
+    nhakhoabh: {
+      type: String,
+      default: "",
+    },
+    bacsibh: {
+      type: String,
+      default: "",
+    },
+    benhnhanbh: {
+      type: String,
+      default: "",
+    },
   },
   { timestamps: true }
 );
