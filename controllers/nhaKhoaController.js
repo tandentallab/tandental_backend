@@ -40,115 +40,109 @@ const taoTenVietTat = (ten, idFallback) => {
 };
 
 exports.updateSoDuDauKy = async (req, res) => {
-  const session = await mongoose.startSession();
-  let businessError = null;
-  let updatedNhaKhoa;
-
   try {
-    await session.withTransaction(async () => {
-      const { id } = req.params;
-      const { thang, nam, soTien } = req.body;
+    const { id } = req.params;
+    const { thang, nam, soTien } = req.body;
 
-      if (!thang || !nam || soTien === undefined) {
-        businessError = "Thiếu thang, nam hoặc soTien";
-        return;
-      }
-
-      const nhaKhoa = await NhaKhoa.findById(id).session(session);
-      if (!nhaKhoa) {
-        businessError = "Không tìm thấy nha khoa";
-        return;
-      }
-
-      // ================= 1. LƯU VÀO BẢNG NHA KHOA =================
-      if (!Array.isArray(nhaKhoa.soDuDauKy)) nhaKhoa.soDuDauKy = [];
-
-      const existingIndex = nhaKhoa.soDuDauKy.findIndex(
-        (item) => item.thang === Number(thang) && item.nam === Number(nam)
-      );
-
-      if (existingIndex !== -1) {
-        nhaKhoa.soDuDauKy[existingIndex].soTien = Number(soTien);
-      } else {
-        nhaKhoa.soDuDauKy.push({
-          thang: Number(thang),
-          nam: Number(nam),
-          soTien: Number(soTien),
-        });
-      }
-      await nhaKhoa.save({ session });
-      updatedNhaKhoa = nhaKhoa;
-
-      // ================= 2. XỬ LÝ HÓA ĐƠN SDDK =================
-      const yy = String(nam).slice(-2);
-      const mm = String(thang).padStart(2, "0");
-      const uniqueSuffix = nhaKhoa._id.toString().slice(-8).toUpperCase();
-      const soHoaDonSDDK = `SDDK-${mm}${yy}-${uniqueSuffix}`;
-
-      const ngayXuat = dayjs
-        .tz(`${nam}-${mm}-01`, VN_TZ)
-        .subtract(1, "month")
-        .date(11)
-        .toDate();
-
-      const hoaDonSDDK = await HoaDon.findOne({
-        nhaKhoa: nhaKhoa._id,
-        soHoaDon: { $regex: new RegExp(`^SDDK-${mm}${yy}`, "i") },
-      }).session(session);
-
-      // ✅ CHẶN HOÀN TOÀN nếu đã có phiếu thu — không phân biệt soTien là 0 hay > 0
-      if (hoaDonSDDK && (hoaDonSDDK.daThanhToan || 0) > 0) {
-        businessError = `Không thể chỉnh sửa SDDK tháng ${thang}/${nam} vì đã có phiếu thu thanh toán ${hoaDonSDDK.daThanhToan.toLocaleString("vi-VN")}đ. Vui lòng xóa phiếu thu trước.`;
-        return;
-      }
-
-      // ================= XỬ LÝ KHI soTien = 0 =================
-      if (Number(soTien) === 0) {
-        if (hoaDonSDDK) {
-          await HoaDon.deleteOne({ _id: hoaDonSDDK._id }).session(session);
-        }
-        // Nếu chưa có hóa đơn + soTien = 0 → không làm gì
-        return;
-      }
-
-      // ================= XỬ LÝ KHI soTien > 0 =================
-      // Tại đây daThanhToan đã được đảm bảo = 0 nên conLai = soTien, trangThai = "Chưa thanh toán"
-      if (hoaDonSDDK) {
-        hoaDonSDDK.soHoaDon = soHoaDonSDDK;
-        hoaDonSDDK.tongCong = Number(soTien);
-        hoaDonSDDK.giaTriThanhToan = Number(soTien);
-        hoaDonSDDK.conLai = Number(soTien);
-        hoaDonSDDK.trangThai = "Chưa thanh toán";
-        await hoaDonSDDK.save({ session });
-      } else {
-        const hoaDonMoi = new HoaDon({
-          soHoaDon: soHoaDonSDDK,
-          nhaKhoa: nhaKhoa._id,
-          tuNgay: ngayXuat,
-          denNgay: ngayXuat,
-          ngayXuatHoaDon: ngayXuat,
-          danhSachSanPham: [],
-          tongCong: Number(soTien),
-          giaTriThanhToan: Number(soTien),
-          daThanhToan: 0,
-          conLai: Number(soTien),
-          chinhSachThanhToan: "Thanh toán ngay",
-          ghiChuNoiBo: `Số dư công nợ chuyển giao tính đến tháng ${thang}/${nam}`,
-          trangThai: "Chưa thanh toán",
-        });
-        await hoaDonMoi.save({ session });
-      }
-    });
-
-    if (businessError) {
-      return res.status(400).json({ success: false, message: businessError });
+    if (!thang || !nam || soTien === undefined) {
+      return res.status(400).json({ success: false, message: "Thiếu thang, nam hoặc soTien" });
     }
 
-    res.json({ success: true, data: updatedNhaKhoa });
+    let nhaKhoa = await NhaKhoa.findById(id);
+    if (!nhaKhoa) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy nha khoa" });
+    }
+
+    // ================= 2. XỬ LÝ HÓA ĐƠN SDDK =================
+    const yy = String(nam).slice(-2);
+    const mm = String(thang).padStart(2, "0");
+    const uniqueSuffix = nhaKhoa._id.toString().slice(-8).toUpperCase();
+    const soHoaDonSDDK = `SDDK-${mm}${yy}-${uniqueSuffix}`;
+
+    const ngayXuat = dayjs
+      .tz(`${nam}-${mm}-01`, VN_TZ)
+      .subtract(1, "month")
+      .date(11)
+      .toDate();
+
+    const hoaDonSDDK = await HoaDon.findOne({
+      nhaKhoa: nhaKhoa._id,
+      soHoaDon: { $regex: new RegExp(`^SDDK-${mm}${yy}`, "i") },
+    });
+
+    // ✅ CHẶN HOÀN TOÀN nếu đã có phiếu thu — không phân biệt soTien là 0 hay > 0
+    if (hoaDonSDDK && (hoaDonSDDK.daThanhToan || 0) > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Không thể chỉnh sửa SDDK tháng ${thang}/${nam} vì đã có phiếu thu thanh toán ${hoaDonSDDK.daThanhToan.toLocaleString("vi-VN")}đ. Vui lòng xóa phiếu thu trước.`,
+      });
+    }
+
+    // ================= 1. LƯU VÀO BẢNG NHA KHOA =================
+    // Build a clean array from existing data (filter out corrupted subdocs with missing thang/nam)
+    const cleanArr = Array.isArray(nhaKhoa.soDuDauKy)
+      ? nhaKhoa.soDuDauKy
+        .filter((item) => item.thang != null && item.nam != null)
+        .map((item) => ({ thang: item.thang, nam: item.nam, soTien: item.soTien || 0 }))
+      : [];
+
+    const existingIdx = cleanArr.findIndex(
+      (item) => item.thang === Number(thang) && item.nam === Number(nam)
+    );
+
+    if (existingIdx !== -1) {
+      cleanArr[existingIdx].soTien = Number(soTien);
+    } else {
+      cleanArr.push({ thang: Number(thang), nam: Number(nam), soTien: Number(soTien) });
+    }
+
+    // Use native driver to $set the entire array — bypasses Mongoose validation
+    // and works even when the DB field is corrupted (stored as object instead of array)
+    await NhaKhoa.collection.updateOne(
+      { _id: nhaKhoa._id },
+      { $set: { soDuDauKy: cleanArr } }
+    );
+    // Reload to return current state
+    nhaKhoa = await NhaKhoa.findById(id);
+
+    // ================= XỬ LÝ KHI soTien = 0 =================
+    if (Number(soTien) === 0) {
+      if (hoaDonSDDK) {
+        await HoaDon.deleteOne({ _id: hoaDonSDDK._id });
+      }
+      return res.json({ success: true, data: nhaKhoa });
+    }
+
+    // ================= XỬ LÝ KHI soTien > 0 =================
+    if (hoaDonSDDK) {
+      hoaDonSDDK.soHoaDon = soHoaDonSDDK;
+      hoaDonSDDK.tongCong = Number(soTien);
+      hoaDonSDDK.giaTriThanhToan = Number(soTien);
+      hoaDonSDDK.conLai = Number(soTien);
+      hoaDonSDDK.trangThai = "Chưa thanh toán";
+      await hoaDonSDDK.save();
+    } else {
+      const hoaDonMoi = new HoaDon({
+        soHoaDon: soHoaDonSDDK,
+        nhaKhoa: nhaKhoa._id,
+        tuNgay: ngayXuat,
+        denNgay: ngayXuat,
+        ngayXuatHoaDon: ngayXuat,
+        danhSachSanPham: [],
+        tongCong: Number(soTien),
+        giaTriThanhToan: Number(soTien),
+        daThanhToan: 0,
+        conLai: Number(soTien),
+        chinhSachThanhToan: "Thanh toán ngay",
+        ghiChuNoiBo: `Số dư công nợ chuyển giao tính đến tháng ${thang}/${nam}`,
+        trangThai: "Chưa thanh toán",
+      });
+      await hoaDonMoi.save();
+    }
+
+    res.json({ success: true, data: nhaKhoa });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
-  } finally {
-    session.endSession();
   }
 };
 
