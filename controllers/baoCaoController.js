@@ -46,16 +46,28 @@ exports.getTopProductsReport = async (req, res) => {
         const matchField = dateType === "henGiao" ? "henGiao" : "ngayNhan";
 
         const topProducts = await DonHang.aggregate([
+            // 1. Lọc đơn hàng theo khoảng thời gian
             { $match: { [matchField]: { $gte: start, $lte: end } } },
+
+            // 2. Tách mảng sản phẩm
             { $unwind: "$danhSachSanPham" },
+
+            // 3. CHỈ LẤY các sản phẩm thuộc loại đơn "Mới"
+            { $match: { "danhSachSanPham.loaiDon": "Mới" } },
+
+            // 4. Gom nhóm theo ID sản phẩm và tính tổng số lượng
             {
                 $group: {
                     _id: "$danhSachSanPham.sanPham",
                     quantity: { $sum: "$danhSachSanPham.soLuong" },
                 },
             },
+
+            // 5. Sắp xếp giảm dần và lấy Top 10
             { $sort: { quantity: -1 } },
             { $limit: 10 },
+
+            // 6. Chuyển đổi ID và Lookup sang bảng SanPham để lấy tên
             { $addFields: { productObjectId: { $toObjectId: "$_id" } } },
             {
                 $lookup: {
@@ -66,6 +78,8 @@ exports.getTopProductsReport = async (req, res) => {
                 },
             },
             { $unwind: "$productInfo" },
+
+            // 7. Format kết quả trả về
             { $project: { _id: 0, name: "$productInfo.tenSanPham", quantity: 1 } },
         ]);
 
@@ -74,7 +88,6 @@ exports.getTopProductsReport = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
-
 // ─────────────────────────────────────────────────────────────────────────────
 // API 2: Báo cáo chi tiết 3 tầng (Bảng)
 // ─────────────────────────────────────────────────────────────────────────────
