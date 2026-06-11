@@ -1,6 +1,8 @@
 const mongoose = require("mongoose"); // Bổ sung dòng này để hết lỗi
 const NhaKhoa = require("../models/NhaKhoa");
 const HoaDon = require("../models/HoaDon");
+const { getCongNoTatCaNhaKhoa } = require("../utils/congNo");
+
 
 // ================= CẤU HÌNH DAYJS =================
 const dayjs = require("dayjs");
@@ -21,7 +23,21 @@ exports.createNhaKhoa = async (req, res) => {
 
 exports.getAllNhaKhoa = async (req, res) => {
   try {
-    const data = await NhaKhoa.find();
+    const [danhSach, danhSachCongNo] = await Promise.all([
+      NhaKhoa.find(),
+      getCongNoTatCaNhaKhoa(),
+    ]);
+ 
+    // Map công nợ theo nhaKhoaId để tra cứu O(1)
+    const congNoMap = new Map(
+      danhSachCongNo.map((item) => [item.nhaKhoaId.toString(), item.tongCongNo])
+    );
+ 
+    const data = danhSach.map((nk) => ({
+      ...nk.toObject(),
+      tongCongNo: congNoMap.get(nk._id.toString()) ?? 0,
+    }));
+ 
     res.json(data);
   } catch (err) {
     res.status(500).json({ message: err.message });
