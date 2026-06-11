@@ -5,12 +5,46 @@ const path = require("path");
 // ================= TẠO NHÂN VIÊN =================
 exports.createNhanVien = async (req, res) => {
   try {
-    // Ép kiểu ngayCongThang về số nếu có gửi lên, nếu không mongoose sẽ tự lấy mặc định (28)
     if (req.body.ngayCongThang) {
       req.body.ngayCongThang = Number(req.body.ngayCongThang);
     }
 
     const nhanVien = await NhanVien.create(req.body);
+
+    // ===== TẠO BẢNG LƯƠNG MẶC ĐỊNH CHO CÁC THÁNG ĐÃ TỒN TẠI =====
+    const BangLuong = require("../models/BangLuong");
+
+    const cacThangDaTon = await BangLuong.aggregate([
+      {
+        $group: {
+          _id: { thang: "$thang", nam: "$nam" },
+        },
+      },
+    ]);
+
+    if (cacThangDaTon.length > 0) {
+      const luongMotNgay =
+        nhanVien.luongCanBan && nhanVien.ngayCongThang
+          ? nhanVien.luongCanBan / nhanVien.ngayCongThang
+          : 0;
+
+      const bangLuongMacDinh = cacThangDaTon.map(({ _id }) => ({
+        thang: _id.thang,
+        nam: _id.nam,
+        nhanVien: nhanVien._id,
+        luongCanBan: nhanVien.luongCanBan,
+        ngayCongThang: nhanVien.ngayCongThang,
+        luongMotNgay,
+        soNgayCong: 0,
+        thanhTienCong: 0,
+        tongPhuCap: 0,
+        tongLuong: nhanVien.luongCanBan,
+        thucNhan: 0,
+      }));
+
+      await BangLuong.insertMany(bangLuongMacDinh);
+    }
+    // ================================================================
 
     res.json({
       success: true,
