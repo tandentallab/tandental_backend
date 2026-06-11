@@ -74,7 +74,7 @@ exports.authorizeRoles = (...allowedRoles) => {
       };
 
       const mappedMenuPath = pathMap[baseUrl];
-      
+
       // Nếu tài khoản có quyenSuDung được gán và route thuộc sơ đồ menu động
       if (staff.quyenSuDung && mappedMenuPath) {
         // Danh sách các catalog/danh mục cần cho phép đọc (GET) để làm dropdown ở các trang khác
@@ -141,6 +141,16 @@ exports.checkPermission = async (req, res, next) => {
       return next();
     }
 
+    // Chặn DELETE đơn hàng
+    if (
+      req.method === "DELETE" &&
+      req.baseUrl === "/api/donhang"
+    ) {
+      return res.status(403).json({
+        message: "Chỉ Admin mới được xóa đơn hàng"
+      });
+    }
+
     // 2. Kiểm tra phân quyền động (Dynamic Permissions)
     const permissions = staff.quyenSuDung?.permissions || [];
     const baseUrl = req.baseUrl || "";
@@ -165,7 +175,7 @@ exports.checkPermission = async (req, res, next) => {
     };
 
     const mappedMenuPath = pathMap[baseUrl];
-    
+
     // Nếu tài khoản có quyenSuDung được gán và route thuộc sơ đồ menu động
     if (staff.quyenSuDung && mappedMenuPath) {
       const isCatalogLookup = [
