@@ -16,4 +16,9 @@ router.get(
 	dashboardController.getRealtimeStats
 );
 
+router.get(
+	"/don-hang-thang",
+	dashboardController.getDonHangByMonth
+);
+
 module.exports = router;
