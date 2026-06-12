@@ -436,3 +436,79 @@ exports.getRealtimeStats = async (req, res) => {
         return res.status(500).json({ success: false, message: error.message });
     }
 };
+
+exports.getDonHangByMonth = async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+
+        const { start, end } = normalizeRange(startDate, endDate);
+
+        const result = await DonHang.aggregate([
+            {
+                $match: {
+                    ngayNhan: {
+                        $gte: start,
+                        $lte: end,
+                    },
+                },
+            },
+            {
+                $addFields: {
+                    loaiDonSet: {
+                        $setUnion: ["$danhSachSanPham.loaiDon"],
+                    },
+                    soSPKhongMoi: {
+                        $size: {
+                            $filter: {
+                                input: "$danhSachSanPham",
+                                as: "sp",
+                                cond: {
+                                    $ne: ["$$sp.loaiDon", "Mới"],
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                $facet: {
+                    donMoi: [
+                        { $match: { soSPKhongMoi: 0 } },
+                        { $count: "total" },
+                    ],
+                    hangSua: [
+                        { $match: { loaiDonSet: "Hàng sửa" } },
+                        { $count: "total" },
+                    ],
+                    hangLamLai: [
+                        { $match: { loaiDonSet: "Hàng làm lại" } },
+                        { $count: "total" },
+                    ],
+                    hangBaoHanh: [
+                        { $match: { loaiDonSet: "Hàng bảo hành" } },
+                        { $count: "total" },
+                    ],
+                },
+            },
+        ]);
+
+        const facet = result[0] ?? {};
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                donHang: {
+                    "Mới": facet.donMoi?.[0]?.total ?? 0,
+                    "Hàng sửa": facet.hangSua?.[0]?.total ?? 0,
+                    "Hàng làm lại": facet.hangLamLai?.[0]?.total ?? 0,
+                    "Hàng bảo hành": facet.hangBaoHanh?.[0]?.total ?? 0,
+                },
+            },
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
