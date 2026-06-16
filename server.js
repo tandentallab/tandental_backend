@@ -28,6 +28,7 @@ const nhanVienRoutes = require("./routes/nhanVienRoutes");
 const bangLuongRoutes = require("./routes/bangLuongRoutes");
 const searchRoutes = require("./routes/searchRoutes");
 const activityLogRoutes = require("./routes/activityLogRoutes");
+const ghiChuRoutes = require("./routes/ghiChuRoutes");
 
 const app = express();
 
@@ -81,7 +82,8 @@ const startServer = async () => {
       "/api/uploads",
       express.static(path.join(__dirname, "public/uploads"))
     );
-    app.use("/api/activity-logs", activityLogRoutes)
+    app.use("/api/activity-logs", activityLogRoutes);
+    app.use("/api/ghi-chu", ghiChuRoutes);
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on ${PORT}`);

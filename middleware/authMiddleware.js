@@ -71,6 +71,7 @@ exports.authorizeRoles = (...allowedRoles) => {
         "/api/quyen-su-dung": "/quyen-su-dung",
         "/api/cong-ty": "/cong-ty",
         "/api/nha-cung-cap": "/nha-cung-cap",
+        "/api/ghi-chu": "/ghi-chu",
       };
 
       const mappedMenuPath = pathMap[baseUrl];
@@ -172,6 +173,7 @@ exports.checkPermission = async (req, res, next) => {
       "/api/quyen-su-dung": "/quyen-su-dung",
       "/api/cong-ty": "/cong-ty",
       "/api/nha-cung-cap": "/nha-cung-cap",
+      "/api/ghi-chu": "/ghi-chu",
     };
 
     const mappedMenuPath = pathMap[baseUrl];

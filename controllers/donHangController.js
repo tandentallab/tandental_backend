@@ -81,6 +81,21 @@ exports.createDonHang = async (req, res) => {
                 });
                 await newDonHang.save();
 
+                // Liên kết các ghi chú được tạo tạm thời từ form thêm mới đơn hàng
+                const { ghiChuIds } = req.body;
+                if (Array.isArray(ghiChuIds) && ghiChuIds.length > 0) {
+                    const GhiChu = require("../models/GhiChu");
+                    await GhiChu.updateMany(
+                        { _id: { $in: ghiChuIds } },
+                        {
+                            $set: {
+                                donHang: newDonHang._id,
+                                maDonHang: newDonHang.maDonHang,
+                            },
+                        }
+                    );
+                }
+
                 return res.status(201).json({
                     success: true,
                     message: "Tạo đơn hàng thành công",
