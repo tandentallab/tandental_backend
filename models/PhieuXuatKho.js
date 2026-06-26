@@ -24,6 +24,11 @@ const phieuXuatKhoSchema = new mongoose.Schema({
     ghiChu: {
         type: String
     },
+    trangThai: {
+        type: String,
+        enum: ["Chưa xuất", "Đã xuất"],
+        default: "Chưa xuất"
+    },
     boPhan: {
         type: String,
         required: true

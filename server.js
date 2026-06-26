@@ -19,6 +19,7 @@ const quyenSuDungRoutes = require("./routes/quyenSuDungRoutes");
 const congTyRoutes = require("./routes/congTyRoutes");
 const khoRoutes = require("./routes/khoRoutes");
 const phieuNhapKhoRoutes = require('./routes/phieuNhapKhoRoutes');
+const phieuXuatKhoRoutes = require('./routes/phieuXuatKhoRoutes');
 const phieuBaoHanhRoutes = require("./routes/phieuBaoHanhRoutes");
 const mauTheBaoHanhRoutes = require("./routes/mauTheBaoHanhRoutes");
 const publicRoutes = require("./routes/publicRoutes");
@@ -72,6 +73,7 @@ const startServer = async () => {
     app.use("/api/cong-ty", congTyRoutes);
     app.use("/api/kho", khoRoutes);
     app.use("/api/phieu-nhap-kho", phieuNhapKhoRoutes);
+    app.use("/api/phieu-xuat-kho", phieuXuatKhoRoutes);
     app.use("/api/phieu-bao-hanh", phieuBaoHanhRoutes);
     app.use("/api/mau-the-bao-hanh", mauTheBaoHanhRoutes);
     app.use("/api/public", publicRoutes);
