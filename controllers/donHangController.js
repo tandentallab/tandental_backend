@@ -164,15 +164,17 @@ exports.getAllDonHang = async (req, res) => {
         if (search && search.trim()) {
             const keyword = search.trim();
             const regex = { $regex: keyword, $options: "i" };
-            const [nkIds, bnIds, bsIds] = await Promise.all([
+            const [nkIds, bnIds, bsIds, spIds] = await Promise.all([
                 NhaKhoa.find({ $or: [{ tenGiaoDich: regex }, { hoVaTen: regex }] }).distinct("_id"),
                 BenhNhan.find({ hoVaTen: regex }).distinct("_id"),
                 NguoiLienHe.find({ hoVaTen: regex }).distinct("_id"),
+                SanPham.find({ tenSanPham: regex }).distinct("_id"),
             ]);
             const orConditions = [{ maDonHang: regex }];
             if (nkIds.length > 0) orConditions.push({ nhaKhoa: { $in: nkIds } });
             if (bnIds.length > 0) orConditions.push({ benhNhan: { $in: bnIds } });
             if (bsIds.length > 0) orConditions.push({ bacSi: { $in: bsIds } });
+            if (spIds.length > 0) orConditions.push({ "danhSachSanPham.sanPham": { $in: spIds } });
             filter.$or = orConditions;
         }
 
