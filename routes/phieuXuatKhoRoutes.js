@@ -4,6 +4,7 @@ const phieuXuatKhoController = require('../controllers/PhieuXuatKhoController');
 
 router.get('/', phieuXuatKhoController.getAll);
 router.post('/', phieuXuatKhoController.create);
+router.get('/options', phieuXuatKhoController.getOptions);
 router.get('/:id', phieuXuatKhoController.getById);
 router.patch('/:id', phieuXuatKhoController.update);
 router.delete('/:id', phieuXuatKhoController.delete);

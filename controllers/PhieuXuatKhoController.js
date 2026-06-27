@@ -1,6 +1,24 @@
 const PhieuXuatKho = require("../models/PhieuXuatKho");
 const VatLieu = require("../models/VatLieu");
 
+exports.getOptions = async (req, res) => {
+    try {
+        const [boPhanList, nhanVienList] = await Promise.all([
+            PhieuXuatKho.distinct("boPhan"),
+            PhieuXuatKho.distinct("nhanVien"),
+        ]);
+        res.json({
+            success: true,
+            data: {
+                boPhanList: boPhanList.filter(Boolean).sort(),
+                nhanVienList: nhanVienList.filter(Boolean).sort(),
+            },
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 exports.getAll = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
