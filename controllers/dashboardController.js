@@ -283,42 +283,73 @@ const fetchRealtimeSnapshot = async () => {
     const ALL_LOAI_DON = ["Mới", "Hàng sửa", "Hàng làm lại", "Hàng bảo hành"];
     const ALL_NHOM = ["Report Hợp Kim", "Report Toàn Sứ"];
 
-    // ── 1. Số đơn hàng hôm nay theo loaiDon ────────────────────────────────
-    // "Mới"         = đơn mà TẤT CẢ item đều là "Mới" (nhất quán với chart2)
-    // Còn lại       = đơn có ÍT NHẤT 1 item thuộc loại đó
+    // ── 1. Số đơn hàng hôm nay theo loaiDon (chỉ tính SP Cố định) ─────────
     const donHangRaw = await DonHang.aggregate([
-        { $match: { ngayNhan: { $gte: todayStart, $lte: todayEnd } } },
         {
-            $addFields: {
-                loaiDonSet: { $setUnion: "$danhSachSanPham.loaiDon" },
-                soSPKhongMoi: {
-                    $size: {
-                        $filter: {
-                            input: "$danhSachSanPham",
-                            as: "sp",
-                            cond: { $ne: ["$$sp.loaiDon", "Mới"] },
-                        },
-                    },
+            $match: {
+                ngayNhan: {
+                    $gte: todayStart,
+                    $lte: todayEnd,
                 },
             },
         },
+
         {
-            $facet: {
-                donMoi: [{ $match: { soSPKhongMoi: 0 } }, { $count: "total" }],
-                hangSua: [{ $match: { loaiDonSet: "Hàng sửa" } }, { $count: "total" }],
-                hangLamLai: [{ $match: { loaiDonSet: "Hàng làm lại" } }, { $count: "total" }],
-                hangBaoHanh: [{ $match: { loaiDonSet: "Hàng bảo hành" } }, { $count: "total" }],
+            $unwind: "$danhSachSanPham",
+        },
+
+        {
+            $lookup: {
+                from: "sanphams",
+                localField: "danhSachSanPham.sanPham",
+                foreignField: "_id",
+                as: "sanPhamInfo",
+            },
+        },
+
+        {
+            $unwind: "$sanPhamInfo",
+        },
+
+        {
+            $match: {
+                "sanPhamInfo.loaiSanPham": "Cố định",
+            },
+        },
+
+        {
+            $group: {
+                _id: "$_id",
+                loaiDonSet: {
+                    $addToSet: "$danhSachSanPham.loaiDon",
+                },
+            },
+        },
+
+        {
+            $unwind: "$loaiDonSet",
+        },
+
+        {
+            $group: {
+                _id: "$loaiDonSet",
+                total: {
+                    $sum: 1,
+                },
             },
         },
     ]);
 
-    const facet = donHangRaw[0] ?? {};
     const donHangHomNay = {
-        "Mới": facet.donMoi?.[0]?.total ?? 0,
-        "Hàng sửa": facet.hangSua?.[0]?.total ?? 0,
-        "Hàng làm lại": facet.hangLamLai?.[0]?.total ?? 0,
-        "Hàng bảo hành": facet.hangBaoHanh?.[0]?.total ?? 0,
+        "Mới": 0,
+        "Hàng sửa": 0,
+        "Hàng làm lại": 0,
+        "Hàng bảo hành": 0,
     };
+
+    donHangRaw.forEach((item) => {
+        donHangHomNay[item._id] = item.total;
+    });
 
     // ── 2. Số lượng răng hôm nay theo nhóm SP + loaiDon ─────────────────────
     const rangRaw = await DonHang.aggregate([
@@ -374,7 +405,7 @@ const fetchRealtimeSnapshot = async () => {
         { $match: { "spInfo.nhomSanPham": { $in: ["Report Hợp Kim", "Report Toàn Sứ"] } } },
         {
             $lookup: {
-                from: "banggia",
+                from: "banggias",
                 let: { nhaKhoaId: "$nhaKhoa", sanPhamId: "$danhSachSanPham.sanPham" },
                 pipeline: [
                     {
@@ -434,5 +465,94 @@ exports.getRealtimeStats = async (req, res) => {
         return res.status(200).json({ success: true, data: snapshot });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+exports.getDonHangByMonth = async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+
+        const { start, end } = normalizeRange(startDate, endDate);
+
+        const result = await DonHang.aggregate([
+            {
+                $match: {
+                    ngayNhan: {
+                        $gte: start,
+                        $lte: end,
+                    },
+                },
+            },
+
+            {
+                $unwind: "$danhSachSanPham",
+            },
+
+            {
+                $lookup: {
+                    from: "sanphams",
+                    localField: "danhSachSanPham.sanPham",
+                    foreignField: "_id",
+                    as: "sanPhamInfo",
+                },
+            },
+
+            {
+                $unwind: "$sanPhamInfo",
+            },
+
+            {
+                $match: {
+                    "sanPhamInfo.loaiSanPham": "Cố định",
+                },
+            },
+
+            // mỗi đơn chỉ lấy unique loaiDon
+            {
+                $group: {
+                    _id: "$_id",
+                    loaiDonSet: {
+                        $addToSet: "$danhSachSanPham.loaiDon",
+                    },
+                },
+            },
+
+            {
+                $unwind: "$loaiDonSet",
+            },
+
+            // đếm số đơn theo loại
+            {
+                $group: {
+                    _id: "$loaiDonSet",
+                    total: {
+                        $sum: 1,
+                    },
+                },
+            },
+        ]);
+
+        const donHang = {
+            "Mới": 0,
+            "Hàng sửa": 0,
+            "Hàng làm lại": 0,
+            "Hàng bảo hành": 0,
+        };
+
+        result.forEach((item) => {
+            donHang[item._id] = item.total;
+        });
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                donHang,
+            },
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message,
+        });
     }
 };

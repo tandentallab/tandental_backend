@@ -81,6 +81,21 @@ exports.createDonHang = async (req, res) => {
                 });
                 await newDonHang.save();
 
+                // Liên kết các ghi chú được tạo tạm thời từ form thêm mới đơn hàng
+                const { ghiChuIds } = req.body;
+                if (Array.isArray(ghiChuIds) && ghiChuIds.length > 0) {
+                    const GhiChu = require("../models/GhiChu");
+                    await GhiChu.updateMany(
+                        { _id: { $in: ghiChuIds } },
+                        {
+                            $set: {
+                                donHang: newDonHang._id,
+                                maDonHang: newDonHang.maDonHang,
+                            },
+                        }
+                    );
+                }
+
                 return res.status(201).json({
                     success: true,
                     message: "Tạo đơn hàng thành công",
@@ -149,15 +164,17 @@ exports.getAllDonHang = async (req, res) => {
         if (search && search.trim()) {
             const keyword = search.trim();
             const regex = { $regex: keyword, $options: "i" };
-            const [nkIds, bnIds, bsIds] = await Promise.all([
+            const [nkIds, bnIds, bsIds, spIds] = await Promise.all([
                 NhaKhoa.find({ $or: [{ tenGiaoDich: regex }, { hoVaTen: regex }] }).distinct("_id"),
                 BenhNhan.find({ hoVaTen: regex }).distinct("_id"),
                 NguoiLienHe.find({ hoVaTen: regex }).distinct("_id"),
+                SanPham.find({ tenSanPham: regex }).distinct("_id"),
             ]);
             const orConditions = [{ maDonHang: regex }];
             if (nkIds.length > 0) orConditions.push({ nhaKhoa: { $in: nkIds } });
             if (bnIds.length > 0) orConditions.push({ benhNhan: { $in: bnIds } });
             if (bsIds.length > 0) orConditions.push({ bacSi: { $in: bsIds } });
+            if (spIds.length > 0) orConditions.push({ "danhSachSanPham.sanPham": { $in: spIds } });
             filter.$or = orConditions;
         }
 

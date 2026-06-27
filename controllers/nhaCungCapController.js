@@ -1,77 +1,46 @@
 const NhaCungCap = require("../models/NhaCungCap");
 
-// GET /api/nha-cung-cap
-const getAllNhaCungCap = async (req, res) => {
+exports.createNhaCungCap = async (req, res) => {
   try {
-    const list = await NhaCungCap.find({}).sort({ createdAt: -1 });
-    return res.json(list);
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error" });
+    const data = await NhaCungCap.create(req.body);
+    res.status(201).json(data);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
-// GET /api/nha-cung-cap/:id
-const getNhaCungCapById = async (req, res) => {
+exports.getAllNhaCungCap = async (req, res) => {
   try {
-    const { id } = req.params;
-    const item = await NhaCungCap.findById(id);
-    if (!item) return res.status(404).json({ message: "Not found" });
-    return res.json(item);
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error" });
+    const data = await NhaCungCap.find().sort({ createdAt: -1 });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
-// POST /api/nha-cung-cap
-const createNhaCungCap = async (req, res) => {
-  try {
-    const payload = req.body;
-    if (!payload.ten_nha_cung_cap) {
-      return res.status(400).json({ message: "ten_nha_cung_cap is required" });
-    }
-
-    const newItem = new NhaCungCap(payload);
-    await newItem.save();
-    return res.status(201).json(newItem);
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error" });
-  }
-};
-
-// PUT /api/nha-cung-cap/:id
-const updateNhaCungCap = async (req, res) => {
+exports.updateNhaCungCap = async (req, res) => {
   try {
     const { id } = req.params;
-    const payload = req.body;
-    const updated = await NhaCungCap.findByIdAndUpdate(id, payload, { returnDocument: 'after' });
-    if (!updated) return res.status(404).json({ message: "Not found" });
-    return res.json(updated);
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error" });
+    const updated = await NhaCungCap.findByIdAndUpdate(id, req.body, {
+      returnDocument: "after",
+      runValidators: true,
+    });
+    if (!updated)
+      return res.status(404).json({ message: "Không tìm thấy nhà cung cấp" });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
-// DELETE (soft) /api/nha-cung-cap/:id
-const softDeleteNhaCungCap = async (req, res) => {
+exports.deleteNhaCungCap = async (req, res) => {
   try {
     const { id } = req.params;
-    const updated = await NhaCungCap.findByIdAndUpdate(id, { is_actived: false }, { returnDocument: 'after' });
-    if (!updated) return res.status(404).json({ message: "Not found" });
-    return res.json({ message: "Deleted", item: updated });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error" });
+    const deleted = await NhaCungCap.findByIdAndDelete(id);
+    if (!deleted)
+      return res.status(404).json({ message: "Không tìm thấy nhà cung cấp" });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
-};
-
-module.exports = {
-  getAllNhaCungCap,
-  getNhaCungCapById,
-  createNhaCungCap,
-  updateNhaCungCap,
-  softDeleteNhaCungCap,
 };

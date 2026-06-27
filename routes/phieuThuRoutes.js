@@ -6,6 +6,11 @@ const { verifyToken, checkPermission } = require("../middleware/authMiddleware")
 // Lấy tất cả phiếu thu
 router.get("/", verifyToken, checkPermission, phieuThuController.getAllPhieuThu);
 
+router.get(
+  "/hoa-don/:hoaDonId",
+  phieuThuController.getPhieuThuByHoaDonId
+);
+
 // Lấy chi tiết phiếu thu
 router.get("/:id", verifyToken, checkPermission, phieuThuController.getPhieuThuById);
 
@@ -14,10 +19,5 @@ router.post("/", verifyToken, checkPermission, phieuThuController.createPhieuThu
 
 // Cập nhật phiếu thu
 router.patch("/:id", verifyToken, checkPermission, phieuThuController.updatePhieuThu);
-
-router.get(
-  "/hoa-don/:hoaDonId",
-  phieuThuController.getPhieuThuByHoaDonId
-);
 
 module.exports = router;
