@@ -40,6 +40,7 @@ exports.getAll = async (req, res) => {
 
         const phieuNhapKhos = await PhieuNhapKho.find(filter)
             .select("ngayTao soPhieu trangThai nguoiTao ghiChu danhSachVatLieu")
+            .populate("danhSachVatLieu.vatLieu", "tenVatLieu")
             .populate("danhSachVatLieu.nhaCungCap", "ten")
             .sort({ ngayTao: -1 })
             .skip(skip)
