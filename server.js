@@ -30,6 +30,7 @@ const bangLuongRoutes = require("./routes/bangLuongRoutes");
 const searchRoutes = require("./routes/searchRoutes");
 const activityLogRoutes = require("./routes/activityLogRoutes");
 const ghiChuRoutes = require("./routes/ghiChuRoutes");
+const chiPhiRoutes = require('./routes/chiPhiRoutes');
 
 const app = express();
 
@@ -80,6 +81,7 @@ const startServer = async () => {
     app.use("/api/nhan-vien", nhanVienRoutes);
     app.use("/api/bang-luong", bangLuongRoutes);
     app.use("/api/search", searchRoutes);
+    app.use('/api/chiphi', chiPhiRoutes);
     app.use(
       "/api/uploads",
       express.static(path.join(__dirname, "public/uploads"))
