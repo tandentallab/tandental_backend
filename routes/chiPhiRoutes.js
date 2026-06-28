@@ -12,4 +12,6 @@ router.get('/', verifyToken, checkPermission, chiPhiController.layDanhSachChiPhi
 // 3. Route xóa chi phí theo ID
 router.delete('/:id', verifyToken, checkPermission, chiPhiController.xoaChiPhi);
 
+router.get('/thong-ke-vat-lieu', verifyToken, checkPermission, chiPhiController.thongKeChiPhiNhapTheoThang);
+
 module.exports = router;

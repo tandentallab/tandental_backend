@@ -1,5 +1,6 @@
 const ChiPhi = require('../models/ChiPhi'); // Đường dẫn có thể thay đổi tùy cấu trúc thư mục của bạn
 const BangLuong = require('../models/BangLuong'); // Import model Bảng Lương
+const PhieuNhapKho = require("../models/PhieuNhapKho");
 const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 const timezone = require('dayjs/plugin/timezone');
@@ -45,26 +46,7 @@ exports.taoChiPhi = async (req, res) => {
     }
 };
 
-// 2. Lấy danh sách tất cả chi phí
-exports.layDanhSachChiPhi = async (req, res) => {
-    try {
-        // Lấy danh sách và sắp xếp theo ngày tạo mới nhất (giảm dần)
-        const danhSachChiPhi = await ChiPhi.find().sort({ ngayTao: -1 });
 
-        res.status(200).json({
-            success: true,
-            data: danhSachChiPhi
-        });
-
-    } catch (error) {
-        console.error('Lỗi khi lấy danh sách chi phí:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Lỗi server khi lấy danh sách chi phí',
-            error: error.message
-        });
-    }
-};
 
 // 3. Xóa chi phí (Option: Dành cho trường hợp nhập sai)
 exports.xoaChiPhi = async (req, res) => {
@@ -133,20 +115,45 @@ exports.layDanhSachChiPhi = async (req, res) => {
         const chiPhiLuong = {
             _id: "auto_luong_nhan_vien",
             tenChiPhi: `Tổng lương nhân viên tháng ${thang}/${nam}`,
-            loaiChiPhi: "Lương nhân viên",
+            loaiChiPhi: "Lương NV",
             gia: tongLuongThucNhan,
             ghiChu: "Tự động đồng bộ từ Bảng lương",
             ngayTao: startDate,
             isAuto: true
         };
 
-        // 4. Khởi tạo CHI PHÍ VẬT LIỆU (Giả lập, chờ làm Kho)
+        // 4. Tính CHI PHÍ VẬT LIỆU TỰ ĐỘNG TỪ KHO
+        // Dùng luôn startDate và endDate đã tính bằng dayjs ở Bước 2
+        const thongKeVatLieu = await PhieuNhapKho.aggregate([
+            {
+                $match: {
+                    trangThai: "Đã nhận",
+                    ngayTao: {
+                        $gte: startDate,
+                        $lte: endDate
+                    }
+                }
+            },
+            {
+                $unwind: "$danhSachVatLieu"
+            },
+            {
+                $group: {
+                    _id: null,
+                    tongChiPhi: { $sum: "$danhSachVatLieu.thanhTien" }
+                }
+            }
+        ]);
+
+        // Lấy kết quả tổng, nếu mảng rỗng thì gán bằng 0
+        const tongGiaVatLieu = thongKeVatLieu.length > 0 ? thongKeVatLieu[0].tongChiPhi : 0;
+
         const chiPhiVatLieu = {
             _id: "auto_chi_phi_vat_lieu",
             tenChiPhi: `Chi phí vật liệu tháng ${thang}/${nam}`,
             loaiChiPhi: "Vật tư",
-            gia: 0,
-            ghiChu: "Chờ đồng bộ từ xuất/nhập Kho",
+            gia: tongGiaVatLieu, // Lắp số liệu thật vào đây
+            ghiChu: "Tự động đồng bộ từ phiếu nhập Kho",
             ngayTao: startDate,
             isAuto: true
         };
@@ -172,6 +179,64 @@ exports.layDanhSachChiPhi = async (req, res) => {
             success: false,
             message: "Lỗi server khi lấy danh sách chi phí",
             error: error.message
+        });
+    }
+};
+
+exports.thongKeChiPhiNhapTheoThang = async (req, res) => {
+    try {
+        const { tuNgay, denNgay } = req.query;
+
+        // 1. Tạo bộ lọc cơ bản: Chỉ tính các phiếu "Đã nhận"
+        const matchStage = {
+            trangThai: "Đã nhận" //[cite: 1]
+        };
+
+        // 2. Lọc theo khoảng thời gian sử dụng dayjs timezone
+        if (tuNgay || denNgay) {
+            matchStage.ngayTao = {}; //[cite: 1]
+
+            if (tuNgay) {
+                // Đưa về 00:00:00.000 của ngày tuNgay theo giờ VN, sau đó convert sang chuẩn Date để query DB
+                matchStage.ngayTao.$gte = dayjs.tz(tuNgay).startOf('day').toDate();
+            }
+            if (denNgay) {
+                // Đưa về 23:59:59.999 của ngày denNgay theo giờ VN
+                matchStage.ngayTao.$lte = dayjs.tz(denNgay).endOf('day').toDate();
+            }
+        }
+
+        // 3. Thực thi Aggregation Pipeline
+        const result = await PhieuNhapKho.aggregate([
+            {
+                $match: matchStage
+            },
+            {
+                $unwind: "$danhSachVatLieu" // Tách mảng danhSachVatLieu để dễ tính tổng[cite: 1]
+            },
+            {
+                $group: {
+                    _id: null,
+                    tongChiPhi: { $sum: "$danhSachVatLieu.thanhTien" } // Cộng dồn trường thanhTien[cite: 1]
+                }
+            }
+        ]);
+
+        const tongChiPhi = result.length > 0 ? result[0].tongChiPhi : 0;
+
+        res.status(200).json({
+            success: true,
+            data: {
+                tuNgay,
+                denNgay,
+                tongChiPhi
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Lỗi khi thống kê chi phí vật liệu",
+            error: error.message,
         });
     }
 };
