@@ -113,7 +113,7 @@ exports.getAllGhiChu = async (req, res) => {
           { path: "benhNhan", select: "hoVaTen" },
         ],
       })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: 1 });
 
     res.json({
       success: true,
@@ -156,6 +156,183 @@ exports.deleteGhiChu = async (req, res) => {
     res.json({
       success: true,
       message: "Hoàn thành và xóa ghi chú thành công",
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
+exports.updateGhiChuTrangThai = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { trangThai } = req.body;
+
+    if (!trangThai) {
+      return res.status(400).json({
+        success: false,
+        message: "Trạng thái là bắt buộc",
+      });
+    }
+
+    const ghiChu = await GhiChu.findById(id);
+
+    if (!ghiChu) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy ghi chú",
+      });
+    }
+
+    const oldTrangThai = ghiChu.trangThai;
+    ghiChu.trangThai = trangThai;
+    await ghiChu.save();
+
+    // Log activity
+    await logActivity({
+      req,
+      action: "UPDATE",
+      module: "GhiChu",
+      targetId: id,
+      targetName: ghiChu.maDonHang || "Ghi chú chung",
+      description: `Cập nhật trạng thái ghi chú từ "${oldTrangThai}" sang "${trangThai}"`,
+      newData: ghiChu,
+    });
+
+    res.json({
+      success: true,
+      data: ghiChu,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
+// ================= XÓA TẤT CẢ GHI CHÚ ĐÃ HOÀN THÀNH =================
+exports.deleteCompletedGhiChu = async (req, res) => {
+  try {
+    const completedNotes = await GhiChu.find({ trangThai: "Đã hoàn thành" });
+    const count = completedNotes.length;
+
+    if (count === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Không có ghi chú đã hoàn thành nào để xóa",
+      });
+    }
+
+    await GhiChu.deleteMany({ trangThai: "Đã hoàn thành" });
+
+    // Log activity
+    await logActivity({
+      req,
+      action: "DELETE",
+      module: "GhiChu",
+      targetId: "all_completed",
+      targetName: "Xóa nhanh ghi chú hoàn thành",
+      description: `Đã xóa nhanh tất cả ghi chú đã hoàn thành (${count} ghi chú)`,
+    });
+
+    res.json({
+      success: true,
+      message: `Đã xóa thành công ${count} ghi chú đã hoàn thành`,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
+// ================= CẬP NHẬT NỘI DUNG/ĐƠN HÀNG GHI CHÚ =================
+exports.updateGhiChu = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { maDonHang, noiDung } = req.body;
+
+    if (!noiDung || !noiDung.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Nội dung ghi chú là bắt buộc",
+      });
+    }
+
+    const ghiChu = await GhiChu.findById(id);
+    if (!ghiChu) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy ghi chú",
+      });
+    }
+
+    let donHangId = null;
+    let maDonHangNormalized = null;
+
+    if (maDonHang && maDonHang.trim()) {
+      const code = maDonHang.trim();
+      let order = null;
+
+      if (mongoose.Types.ObjectId.isValid(code)) {
+        order = await DonHang.findById(code);
+      }
+
+      if (!order) {
+        order = await DonHang.findOne({ maDonHang: code });
+      }
+
+      if (!order) {
+        const cleanCode = code.toUpperCase().replace(/^TAN/, "");
+        order = await DonHang.findOne({
+          maDonHang: { $regex: new RegExp(`^(TAN)?${cleanCode}$`, "i") },
+        });
+      }
+
+      if (!order) {
+        const cleanCode = code.toUpperCase().replace(/^TAN/, "");
+        if (cleanCode.length === 8) {
+          order = await DonHang.findOne({
+            maDonHang: { $regex: new RegExp(`${cleanCode}$`, "i") },
+          });
+        }
+      }
+
+      if (order) {
+        donHangId = order._id;
+        maDonHangNormalized = order.maDonHang;
+      } else {
+        maDonHangNormalized = code;
+      }
+    }
+
+    const oldNoiDung = ghiChu.noiDung;
+    const oldMaDonHang = ghiChu.maDonHang;
+
+    ghiChu.noiDung = noiDung.trim();
+    ghiChu.donHang = donHangId;
+    ghiChu.maDonHang = maDonHangNormalized;
+    await ghiChu.save();
+
+    // Log activity
+    await logActivity({
+      req,
+      action: "UPDATE",
+      module: "GhiChu",
+      targetId: id,
+      targetName: maDonHangNormalized || "Ghi chú chung",
+      description: `Cập nhật ghi chú: nội dung từ "${oldNoiDung}" -> "${noiDung.trim()}", đơn hàng từ "${oldMaDonHang || 'Không'}" -> "${maDonHangNormalized || 'Không'}"`,
+      newData: ghiChu,
+    });
+
+    res.json({
+      success: true,
+      message: "Cập nhật ghi chú thành công",
+      data: ghiChu,
     });
   } catch (err) {
     res.status(500).json({
