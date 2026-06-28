@@ -22,13 +22,16 @@ exports.getOptions = async (req, res) => {
 exports.getAll = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
+        const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
 
         const filter = {};
 
         if (req.query.soPhieu) filter.soPhieu = { $regex: req.query.soPhieu, $options: "i" };
-        if (req.query.trangThai) filter.trangThai = req.query.trangThai;
+        if (req.query.trangThai) {
+            const values = req.query.trangThai.split(",").filter(Boolean);
+            filter.trangThai = values.length === 1 ? values[0] : { $in: values };
+        }
         if (req.query.nhanVien) filter.nhanVien = { $regex: req.query.nhanVien, $options: "i" };
         if (req.query.boPhan) filter.boPhan = { $regex: req.query.boPhan, $options: "i" };
 

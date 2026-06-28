@@ -1,10 +1,11 @@
 const PhieuNhapKho = require("../models/PhieuNhapKho");
 const VatLieu = require("../models/VatLieu");
+const NhaCungCap = require("../models/NhaCungCap");
 
 exports.getAll = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
+        const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
 
         // ── Bộ lọc ──────────────────────────────────────────────
@@ -15,14 +16,25 @@ exports.getAll = async (req, res) => {
             filter.soPhieu = { $regex: req.query.soPhieu, $options: "i" };
         }
 
-        // Lọc theo trạng thái
+        // Lọc theo trạng thái (hỗ trợ nhiều giá trị, phân cách bằng dấu phẩy)
         if (req.query.trangThai) {
-            filter.trangThai = req.query.trangThai;
+            const values = req.query.trangThai.split(",").filter(Boolean);
+            filter.trangThai = values.length === 1 ? values[0] : { $in: values };
         }
 
         // Lọc theo người tạo
         if (req.query.nguoiTao) {
             filter.nguoiTao = { $regex: req.query.nguoiTao, $options: "i" };
+        }
+
+        // Lọc theo nhà cung cấp (tra cứu theo tên → lấy _id)
+        if (req.query.nhaCungCap) {
+            const ncc = await NhaCungCap.findOne({ ten: req.query.nhaCungCap }).select("_id");
+            if (ncc) {
+                filter["danhSachVatLieu.nhaCungCap"] = ncc._id;
+            } else {
+                return res.status(200).json({ success: true, data: [], total: 0, page, limit });
+            }
         }
 
         // Lọc theo khoảng ngày
