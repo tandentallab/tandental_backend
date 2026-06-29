@@ -13,6 +13,7 @@ const generateToken = (staff) => {
       HoTenNV: staff.HoTenNV,
       Email: staff.Email,
       appRole,
+      passwordVersion: staff.Password, // Lưu hash password để xác thực thay đổi mật khẩu
     },
     process.env.JWT_SECRET,
     {
@@ -144,6 +145,7 @@ exports.createStaff = async (req, res) => {
       HoTenNV,
       Email: Email.toLowerCase(),
       Password,
+      plainPassword: Password,
       quyenSuDung,
       DienThoai: DienThoai || "",
       DiaChi: DiaChi || "",
@@ -163,6 +165,7 @@ exports.createStaff = async (req, res) => {
         MSNV: staffWithQuyens.MSNV,
         HoTenNV: staffWithQuyens.HoTenNV,
         Email: staffWithQuyens.Email,
+        plainPassword: staffWithQuyens.plainPassword,
         appRole: resolveAppRoleFromStaff(staffWithQuyens),
         quyenSuDung: staffWithQuyens.quyenSuDung,
         DienThoai: staffWithQuyens.DienThoai,
@@ -250,9 +253,10 @@ exports.updateStaff = async (req, res) => {
 
     Object.assign(staff, req.body);
 
-    // Nếu đổi password → hash lại
+    // Nếu đổi password → hash lại và lưu mật khẩu thô
     if (req.body.Password) {
       staff.Password = req.body.Password;
+      staff.plainPassword = req.body.Password;
     }
 
     await staff.save();
@@ -266,6 +270,7 @@ exports.updateStaff = async (req, res) => {
         MSNV: updatedStaff.MSNV,
         HoTenNV: updatedStaff.HoTenNV,
         Email: updatedStaff.Email,
+        plainPassword: updatedStaff.plainPassword,
         appRole: resolveAppRoleFromStaff(updatedStaff),
         quyenSuDung: updatedStaff.quyenSuDung,
         DienThoai: updatedStaff.DienThoai,

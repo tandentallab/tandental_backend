@@ -2,7 +2,7 @@ const jwt = require("jsonwebtoken");
 const Staff = require("../models/Staff");
 const { APP_ROLES, resolveAppRoleFromStaff } = require("../utils/roleResolver");
 
-exports.verifyToken = (req, res, next) => {
+exports.verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
@@ -17,10 +17,17 @@ exports.verifyToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Kiểm tra xem mật khẩu có thay đổi không
+    const staff = await Staff.findById(decoded.id);
+    if (!staff || staff.Password !== decoded.passwordVersion) {
+      return res.status(401).json({ message: "Mật khẩu đã thay đổi. Vui lòng đăng nhập lại." });
+    }
+
     req.user = decoded;
     next(); // ✅ QUAN TRỌNG
   } catch (err) {
-    return res.status(403).json({ message: "Token không hợp lệ" });
+    return res.status(403).json({ message: "Token không hợp lệ hoặc đã hết hạn" });
   }
 };
 
