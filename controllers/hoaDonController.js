@@ -468,14 +468,14 @@ exports.getAllHoaDonAdmin = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const { trangThai, search, nhaKhoaId, fromDate, toDate, loaiHan } = req.query;
+    const { trangThai, search, nhaKhoaId, fromDate, toDate, loaiHan, sortOrder } = req.query;
 
     let query = {
-      soHoaDon: { $not: /^SDDK/i }
+      $nor: [{ soHoaDon: { $regex: "^SDDK", $options: "i" } }]
     };
 
     if (nhaKhoaId && mongoose.Types.ObjectId.isValid(nhaKhoaId)) {
-      query.nhaKhoa = nhaKhoaId;
+      query.nhaKhoa = new mongoose.Types.ObjectId(nhaKhoaId);
     }
 
     // --- LỌC THEO TỪ NGÀY / ĐẾN NGÀY ---
@@ -494,9 +494,8 @@ exports.getAllHoaDonAdmin = async (req, res) => {
       query.trangThai = { $in: ["Chưa thanh toán", "Thanh toán một phần"] };
 
       if (loaiHan === "treHan" || loaiHan === "chuaDenHan") {
-        const moc20NgayTruoc = dayjs().tz(VN_TZ).subtract(20, 'day').endOf('day').toDate();
+        const moc20NgayTruoc = dayjs().tz(VN_TZ).subtract(20, "day").endOf("day").toDate();
         if (!query.ngayXuatHoaDon) query.ngayXuatHoaDon = {};
-
         if (loaiHan === "treHan") query.ngayXuatHoaDon.$lt = moc20NgayTruoc;
         else if (loaiHan === "chuaDenHan") query.ngayXuatHoaDon.$gte = moc20NgayTruoc;
       }
@@ -529,18 +528,47 @@ exports.getAllHoaDonAdmin = async (req, res) => {
       query.$or = orConditions;
     }
 
-    // Thực thi song song Count và Find
+    const sortDir = sortOrder === "asc" ? 1 : -1;
+
+
+    // Thực thi song song Count và Aggregate
     const [total, danhSach] = await Promise.all([
       HoaDon.countDocuments(query),
-      HoaDon.find(query)
-        // TỐI ƯU 1: CHỈ trả về các field UI thực sự cần, cắt bỏ mảng danhSachSanPham khổng lồ
-        .select("ngayXuatHoaDon soHoaDon nhaKhoa tongCong chietKhau giaTriThanhToan daThanhToan conLai chiPhiKhac trangThai ghiChuChoKhachHang ghiChuNoiBo createdAt")
-        // TỐI ƯU 2: Bỏ deep populate, chỉ lấy tên nhaKhoa
-        .populate("nhaKhoa", "hoVaTen tenNhaKhoa tinh")
-        .sort({ ngayXuatHoaDon: -1, createdAt: -1 }) // Khớp với Compound Index
-        .skip(skip)
-        .limit(limit)
-        .lean() // TỐI ƯU 3: Bỏ qua overhead của Mongoose Document, trả về raw JSON
+      HoaDon.aggregate([
+        { $match: query },
+        { $sort: { ngayXuatHoaDon: sortDir, createdAt: sortDir } },
+        { $skip: skip },
+        { $limit: limit },
+        // TỐI ƯU: $lookup thay populate — join trong DB, không qua application layer
+        {
+          $lookup: {
+            from: "nhakhoas",
+            localField: "nhaKhoa",
+            foreignField: "_id",
+            pipeline: [{ $project: { hoVaTen: 1, tenNhaKhoa: 1, tinh: 1 } }],
+            as: "nhaKhoa",
+          },
+        },
+        { $unwind: { path: "$nhaKhoa", preserveNullAndEmptyArrays: true } },
+        // CHỈ trả về các field UI thực sự cần, cắt bỏ mảng danhSachSanPham khổng lồ
+        {
+          $project: {
+            ngayXuatHoaDon: 1,
+            soHoaDon: 1,
+            nhaKhoa: 1,
+            tongCong: 1,
+            chietKhau: 1,
+            giaTriThanhToan: 1,
+            daThanhToan: 1,
+            conLai: 1,
+            chiPhiKhac: 1,
+            trangThai: 1,
+            ghiChuChoKhachHang: 1,
+            ghiChuNoiBo: 1,
+            createdAt: 1,
+          },
+        },
+      ]),
     ]);
 
     res.json({
