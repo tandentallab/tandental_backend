@@ -13,6 +13,7 @@ const staffSchema = new mongoose.Schema(
       match: [/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/, "Email không hợp lệ"]
     },
     Password: { type: String, required: true },
+    plainPassword: { type: String, default: "" },
     quyenSuDung: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "QuyenSuDung",
