@@ -12,12 +12,77 @@ exports.createVatLieu = async (req, res) => {
   }
 };
 
+/**
+ * GET /kho/vat-lieu
+ * Query params (tất cả đều optional):
+ *   - page        : số trang, bắt đầu từ 1 (default: 1)
+ *   - limit       : số bản ghi mỗi trang (default: 20)
+ *   - search      : tìm theo maVatLieu, tenVatLieu, loaiVatLieu, nhomVatLieu, formRang, mauRang, donViTinh
+ *   - nhaCungCap  : lọc theo _id nhà cung cấp
+ *   - nhomVatLieu : lọc chính xác theo nhóm
+ *   - trangThai   : "thieu" | "du" — so sánh soLuong vs tonKhoToiThieu
+ */
 exports.getAllVatLieu = async (req, res) => {
   try {
-    const data = await VatLieu.find()
-      .populate("nhaCungCap", "ten soDienThoai email")
-      .sort({ createdAt: -1 });
-    res.json(data);
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    // ── Build filter ──────────────────────────────────────────────────────
+    const filter = {};
+
+    // Tìm kiếm full-text đơn giản (regex)
+    if (req.query.search?.trim()) {
+      const kw = req.query.search.trim();
+      const re = new RegExp(kw, "i");
+      filter.$or = [
+        { maVatLieu: re },
+        { tenVatLieu: re },
+        { loaiVatLieu: re },
+        { nhomVatLieu: re },
+        { formRang: re },
+        { mauRang: re },
+        { donViTinh: re },
+      ];
+    }
+
+    if (req.query.nhaCungCap) {
+      filter.nhaCungCap = req.query.nhaCungCap;
+    }
+
+    if (req.query.nhomVatLieu) {
+      filter.nhomVatLieu = req.query.nhomVatLieu;
+    }
+
+    // Lọc tình trạng tồn kho bằng $expr (so sánh hai field)
+    if (req.query.trangThai === "thieu") {
+      // soLuong < tonKhoToiThieu
+      filter.$expr = { $lt: ["$soLuong", "$tonKhoToiThieu"] };
+    } else if (req.query.trangThai === "du") {
+      // soLuong >= tonKhoToiThieu
+      filter.$expr = { $gte: ["$soLuong", "$tonKhoToiThieu"] };
+    }
+
+    // ── Query ─────────────────────────────────────────────────────────────
+    const [data, total] = await Promise.all([
+      VatLieu.find(filter)
+        .populate("nhaCungCap", "ten soDienThoai email")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      VatLieu.countDocuments(filter),
+    ]);
+
+    res.json({
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasMore: page * limit < total,
+      },
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
