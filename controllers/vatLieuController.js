@@ -20,6 +20,7 @@ exports.createVatLieu = async (req, res) => {
  *   - search      : tìm theo maVatLieu, tenVatLieu, loaiVatLieu, nhomVatLieu, formRang, mauRang, donViTinh
  *   - nhaCungCap  : lọc theo _id nhà cung cấp
  *   - nhomVatLieu : lọc chính xác theo nhóm
+ *   - loaiVatLieu : lọc chính xác theo loại
  *   - trangThai   : "thieu" | "du" — so sánh soLuong vs tonKhoToiThieu
  */
 exports.getAllVatLieu = async (req, res) => {
@@ -52,6 +53,10 @@ exports.getAllVatLieu = async (req, res) => {
 
     if (req.query.nhomVatLieu) {
       filter.nhomVatLieu = req.query.nhomVatLieu;
+    }
+
+    if (req.query.loaiVatLieu) {
+      filter.loaiVatLieu = req.query.loaiVatLieu;
     }
 
     // Lọc tình trạng tồn kho bằng $expr (so sánh hai field)
@@ -113,6 +118,23 @@ exports.deleteVatLieu = async (req, res) => {
     if (!deleted)
       return res.status(404).json({ message: "Không tìm thấy vật liệu" });
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/**
+ * DELETE /kho/vat-lieu
+ * Body: { ids: string[] } — xóa nhiều vật liệu cùng lúc
+ */
+exports.deleteVatLieuMany = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: "Danh sách ID không hợp lệ" });
+    }
+    const result = await VatLieu.deleteMany({ _id: { $in: ids } });
+    res.json({ success: true, deletedCount: result.deletedCount });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
