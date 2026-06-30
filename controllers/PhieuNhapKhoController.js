@@ -8,36 +8,48 @@ exports.getAll = async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
 
-        // ── Bộ lọc ──────────────────────────────────────────────
         const filter = {};
 
-        // Tìm theo số phiếu (không phân biệt hoa thường)
         if (req.query.soPhieu) {
             filter.soPhieu = { $regex: req.query.soPhieu, $options: "i" };
         }
 
-        // Lọc theo trạng thái (hỗ trợ nhiều giá trị, phân cách bằng dấu phẩy)
+        // backward-compat: trangThai cũ → trangThaiNhap / trangThaiThanhToan
         if (req.query.trangThai) {
             const values = req.query.trangThai.split(",").filter(Boolean);
-            filter.trangThai = values.length === 1 ? values[0] : { $in: values };
+            const nhapVals = values.filter((v) => ["Chưa nhận", "Đã nhận"].includes(v));
+            const toanVals = values.filter((v) =>
+                ["Chưa thanh toán", "Đã thanh toán"].includes(v)
+            );
+            if (nhapVals.length)
+                filter.trangThaiNhap = nhapVals.length === 1 ? nhapVals[0] : { $in: nhapVals };
+            if (toanVals.length)
+                filter.trangThaiThanhToan =
+                    toanVals.length === 1 ? toanVals[0] : { $in: toanVals };
+        }
+        if (req.query.trangThaiNhap) {
+            const values = req.query.trangThaiNhap.split(",").filter(Boolean);
+            filter.trangThaiNhap = values.length === 1 ? values[0] : { $in: values };
+        }
+        if (req.query.trangThaiThanhToan) {
+            const values = req.query.trangThaiThanhToan.split(",").filter(Boolean);
+            filter.trangThaiThanhToan = values.length === 1 ? values[0] : { $in: values };
         }
 
-        // Lọc theo người tạo
         if (req.query.nguoiTao) {
             filter.nguoiTao = { $regex: req.query.nguoiTao, $options: "i" };
         }
 
-        // Lọc theo nhà cung cấp (tra cứu theo tên → lấy _id)
+        // NCC nay là top-level field
         if (req.query.nhaCungCap) {
             const ncc = await NhaCungCap.findOne({ ten: req.query.nhaCungCap }).select("_id");
             if (ncc) {
-                filter["danhSachVatLieu.nhaCungCap"] = ncc._id;
+                filter.nhaCungCap = ncc._id;
             } else {
                 return res.status(200).json({ success: true, data: [], total: 0, page, limit });
             }
         }
 
-        // Lọc theo khoảng ngày
         if (req.query.tuNgay || req.query.denNgay) {
             filter.ngayTao = {};
             if (req.query.tuNgay) filter.ngayTao.$gte = new Date(req.query.tuNgay);
@@ -51,16 +63,19 @@ exports.getAll = async (req, res) => {
         const total = await PhieuNhapKho.countDocuments(filter);
 
         const phieuNhapKhos = await PhieuNhapKho.find(filter)
-            .select("ngayTao soPhieu trangThai nguoiTao ghiChu danhSachVatLieu")
-            .populate("danhSachVatLieu.vatLieu", "tenVatLieu")
-            .populate("danhSachVatLieu.nhaCungCap", "ten")
+            .select(
+                "ngayTao soPhieu trangThaiNhap trangThaiThanhToan nguoiTao ghiChu nhaCungCap danhSachVatLieu ngayNhan"
+            )
+            .populate("nhaCungCap", "ten")
+            .populate("danhSachVatLieu.vatLieu", "tenVatLieu donViTinh")
             .sort({ ngayTao: -1 })
             .skip(skip)
             .limit(limit);
 
         const data = phieuNhapKhos.map((phieu) => {
             const tongTien = phieu.danhSachVatLieu.reduce(
-                (sum, item) => sum + (item.thanhTien || 0), 0
+                (sum, item) => sum + (item.thanhTien || 0),
+                0
             );
             return { ...phieu.toObject(), tongTien };
         });
@@ -78,11 +93,13 @@ exports.getAll = async (req, res) => {
 exports.getById = async (req, res) => {
     try {
         const phieuNhapKho = await PhieuNhapKho.findById(req.params.id)
-            .populate("danhSachVatLieu.vatLieu", "tenVatLieu maVatLieu donViTinh giaMua")
-            .populate("danhSachVatLieu.nhaCungCap", "ten");
+            .populate("nhaCungCap", "ten diaChi soDienThoai")
+            .populate("danhSachVatLieu.vatLieu", "tenVatLieu maVatLieu donViTinh giaMua");
 
         if (!phieuNhapKho) {
-            return res.status(404).json({ success: false, message: "Phiếu nhập kho không tồn tại" });
+            return res
+                .status(404)
+                .json({ success: false, message: "Phiếu nhập kho không tồn tại" });
         }
 
         res.status(200).json({ success: true, data: phieuNhapKho });
@@ -97,9 +114,14 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
     try {
-        const { danhSachVatLieu, ghiChu, nguoiTao } = req.body;
+        const { nhaCungCap, danhSachVatLieu, ghiChu, nguoiTao } = req.body;
 
-        const newPhieu = new PhieuNhapKho({ danhSachVatLieu, ghiChu, nguoiTao });
+        const newPhieu = new PhieuNhapKho({
+            nhaCungCap: nhaCungCap || null,
+            danhSachVatLieu,
+            ghiChu,
+            nguoiTao,
+        });
         const saved = await newPhieu.save();
 
         res.status(201).json({ success: true, data: saved });
@@ -112,28 +134,33 @@ exports.create = async (req, res) => {
     }
 };
 
-// Cập nhật nội dung phiếu (chỉ được sửa khi còn "Chưa nhận")
-// Hoặc cập nhật trạng thái → "Đã nhận" thì cộng tồn kho
+// Cập nhật nội dung (chỉ khi "Chưa nhận") hoặc đổi trạng thái
 exports.update = async (req, res) => {
     try {
         const { id } = req.params;
-        const { trangThai, ghiChu, danhSachVatLieu } = req.body;
+        const { trangThaiNhap, trangThaiThanhToan, nhaCungCap, ghiChu, danhSachVatLieu } =
+            req.body;
 
         const phieu = await PhieuNhapKho.findById(id);
         if (!phieu) {
-            return res.status(404).json({ success: false, message: "Phiếu nhập kho không tồn tại" });
+            return res
+                .status(404)
+                .json({ success: false, message: "Phiếu nhập kho không tồn tại" });
         }
 
         // Không cho sửa nội dung phiếu đã nhận
-        if (phieu.trangThai === "Đã nhận" && danhSachVatLieu) {
+        if (
+            phieu.trangThaiNhap === "Đã nhận" &&
+            (danhSachVatLieu !== undefined || nhaCungCap !== undefined)
+        ) {
             return res.status(400).json({
                 success: false,
                 message: "Không thể chỉnh sửa phiếu đã nhận hàng",
             });
         }
 
-        // Chuyển sang "Đã nhận" → cộng tồn kho
-        if (trangThai === "Đã nhận" && phieu.trangThai === "Chưa nhận") {
+        // Chuyển sang "Đã nhận" → cộng tồn kho + ghi ngày nhận
+        if (trangThaiNhap === "Đã nhận" && phieu.trangThaiNhap === "Chưa nhận") {
             const list = danhSachVatLieu || phieu.danhSachVatLieu;
             const bulkOps = list.map((item) => ({
                 updateOne: {
@@ -142,11 +169,14 @@ exports.update = async (req, res) => {
                 },
             }));
             if (bulkOps.length > 0) await VatLieu.bulkWrite(bulkOps);
+            phieu.ngayNhan = new Date();
         }
 
-        if (trangThai !== undefined) phieu.trangThai = trangThai;
+        if (trangThaiNhap !== undefined) phieu.trangThaiNhap = trangThaiNhap;
+        if (trangThaiThanhToan !== undefined) phieu.trangThaiThanhToan = trangThaiThanhToan;
         if (ghiChu !== undefined) phieu.ghiChu = ghiChu;
         if (danhSachVatLieu !== undefined) phieu.danhSachVatLieu = danhSachVatLieu;
+        if (nhaCungCap !== undefined) phieu.nhaCungCap = nhaCungCap || null;
 
         const updated = await phieu.save();
         res.status(200).json({ success: true, data: updated });
@@ -166,9 +196,11 @@ exports.delete = async (req, res) => {
 
         const phieu = await PhieuNhapKho.findById(id);
         if (!phieu) {
-            return res.status(404).json({ success: false, message: "Phiếu nhập kho không tồn tại" });
+            return res
+                .status(404)
+                .json({ success: false, message: "Phiếu nhập kho không tồn tại" });
         }
-        if (phieu.trangThai === "Đã nhận") {
+        if (phieu.trangThaiNhap === "Đã nhận") {
             return res.status(400).json({
                 success: false,
                 message: "Không thể xóa phiếu đã nhận hàng",

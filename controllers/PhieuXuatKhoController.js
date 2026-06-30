@@ -49,7 +49,7 @@ exports.getAll = async (req, res) => {
 
         const phieuXuatKhos = await PhieuXuatKho.find(filter)
             .select("ngayTao soPhieu trangThai nhanVien boPhan ghiChu danhSachVatLieu")
-            .populate("danhSachVatLieu.vatLieu", "tenVatLieu maVatLieu donViTinh")
+            .populate("danhSachVatLieu.vatLieu", "tenVatLieu donViTinh")
             .sort({ ngayTao: -1 })
             .skip(skip)
             .limit(limit);
