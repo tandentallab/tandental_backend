@@ -444,7 +444,6 @@ exports.getDoanhThuThang = async (req, res) => {
         const endOfMonth = dayjs(startOfMonth).tz(VN_TZ).endOf("month").toDate();
 
         const hdStats = await HoaDon.aggregate([
-            { $match: { trangThai: { $nin: ["Lưu tạm", "Đã hủy"] } } },
             {
                 $group: {
                     _id: "$nhaKhoa",
