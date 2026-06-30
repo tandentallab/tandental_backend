@@ -13,6 +13,7 @@ const {
   getAllVatLieu,
   updateVatLieu,
   deleteVatLieu,
+  deleteVatLieuMany,
 } = require("../controllers/vatLieuController");
 
 const { verifyToken, checkPermission } = require("../middleware/authMiddleware");
@@ -26,6 +27,7 @@ router.delete("/nha-cung-cap/:id", verifyToken, checkPermission, deleteNhaCungCa
 // ===== VẬT LIỆU =====
 router.get("/vat-lieu", verifyToken, checkPermission, getAllVatLieu);
 router.post("/vat-lieu", verifyToken, checkPermission, createVatLieu);
+router.delete("/vat-lieu", verifyToken, checkPermission, deleteVatLieuMany); // xóa nhiều
 router.put("/vat-lieu/:id", verifyToken, checkPermission, updateVatLieu);
 router.delete("/vat-lieu/:id", verifyToken, checkPermission, deleteVatLieu);
 
