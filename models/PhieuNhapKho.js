@@ -6,15 +6,15 @@ const phieuNhapKhoSchema = new mongoose.Schema({
         unique: true,
         index: true
     },
+    nhaCungCap: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "NhaCungCap"
+    },
     danhSachVatLieu: [
         {
             vatLieu: {
                 type: mongoose.Schema.Types.ObjectId,
                 ref: "VatLieu"
-            },
-            nhaCungCap: {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: "NhaCungCap"
             },
             soLuong: {
                 type: Number,
@@ -36,10 +36,15 @@ const phieuNhapKhoSchema = new mongoose.Schema({
     ghiChu: {
         type: String
     },
-    trangThai: {
+    trangThaiNhap: {
         type: String,
         enum: ["Chưa nhận", "Đã nhận"],
         default: "Chưa nhận"
+    },
+    trangThaiThanhToan: {
+        type: String,
+        enum: ["Chưa thanh toán", "Đã thanh toán"],
+        default: "Chưa thanh toán"
     },
     nguoiTao: {
         type: String,
@@ -49,7 +54,10 @@ const phieuNhapKhoSchema = new mongoose.Schema({
         type: Date,
         default: Date.now,
         required: true
-    }
+    },
+    ngayNhan: {
+        type: Date
+    },
 })
 
 phieuNhapKhoSchema.pre("save", async function (next) {
