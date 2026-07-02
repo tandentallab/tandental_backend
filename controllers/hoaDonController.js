@@ -339,7 +339,6 @@ exports.createHoaDon = async (req, res) => {
       if (!tuNgay || !denNgay) throw new Error("Vui lòng chọn khoảng thời gian chốt hóa đơn (tuNgay, denNgay)");
       if (Number(chietKhau) < 0) throw new Error("Chiết khấu không hợp lệ");
 
-      // 🔥 LẤY ĐÚNG NGÀY KẾ TOÁN CHỌN - KHÔNG RÀNG BUỘC
       // Ép chuẩn giờ VN để không bị lệch múi giờ
       const finalTuNgay = dayjs(tuNgay).tz(VN_TZ).startOf('day').toDate();
       const finalDenNgay = dayjs(denNgay).tz(VN_TZ).endOf('day').toDate();
@@ -348,11 +347,20 @@ exports.createHoaDon = async (req, res) => {
         throw new Error("Ngày bắt đầu không thể lớn hơn ngày kết thúc.");
       }
 
-      // 🔥 Ngày xuất hóa đơn mặc định = Đến ngày (tái dùng finalDenNgay, đã ép giờ VN)
-      const ngayXuatHoaDon = finalDenNgay;
+      // Mốc thời gian thực hiện tại (ở múi giờ VN)
+      const now = dayjs().tz(VN_TZ);
+
+      // --- CẬP NHẬT LOGIC KIỂM TRA NGÀY XUẤT ---
+      // Mặc định ban đầu = Đến ngày filter
+      let ngayXuatHoaDon = finalDenNgay;
+
+      // Nếu ngày xuất dự kiến (finalDenNgay) lớn hơn ngày hiện tại, tự động cập nhật về thời gian hiện tại
+      if (dayjs(ngayXuatHoaDon).isAfter(now)) {
+        ngayXuatHoaDon = now.toDate();
+      }
+      // ----------------------------------------
 
       // ================= TẠO MÃ HÓA ĐƠN THEO FORMAT MỚI =================
-      const now = dayjs().tz(VN_TZ);
       const yearStr = now.format("YY");
       const monthStr = now.format("MM");
       const prefix = `HD${yearStr}${monthStr}`;
@@ -406,7 +414,7 @@ exports.createHoaDon = async (req, res) => {
         nhaKhoa: nhaKhoaId,
         tuNgay: finalTuNgay,
         denNgay: finalDenNgay,
-        ngayXuatHoaDon, // 🔥 mặc định = Đến ngày filter
+        ngayXuatHoaDon, // 🔥 Đã được chuẩn hóa tự động ở phía trên
         danhSachSanPham,
         tongCong: roundMoney(tongCong),
         chietKhau: roundMoney(chietKhau),
