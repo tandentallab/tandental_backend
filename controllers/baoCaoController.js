@@ -464,16 +464,26 @@ exports.getDoanhThuThang = async (req, res) => {
 
         const ptStats = await PhieuThu.aggregate([
             { $match: { nhaKhoa: { $ne: null }, trangThai: { $ne: "Đã hủy" } } },
+
+            // 👉 THÊM BƯỚC NÀY ĐỂ XÁC ĐỊNH NGÀY DÙNG ĐỂ TÍNH DOANH THU
+            {
+                $addFields: {
+                    ngayTinhDoanhThu: { $ifNull: ["$ngayGhiNhanDoanhThu", "$ngayThu"] }
+                }
+            },
+
             {
                 $group: {
                     _id: "$nhaKhoa",
                     thanhToanTruoc: {
-                        $sum: { $cond: [{ $lt: ["$ngayThu", startOfMonth] }, "$soTienThu", 0] }
+                        // 👉 CẬP NHẬT TRƯỜNG SO SÁNH
+                        $sum: { $cond: [{ $lt: ["$ngayTinhDoanhThu", startOfMonth] }, "$soTienThu", 0] }
                     },
                     thanhToanTrong: {
                         $sum: {
                             $cond: [
-                                { $and: [{ $gte: ["$ngayThu", startOfMonth] }, { $lte: ["$ngayThu", endOfMonth] }] },
+                                // 👉 CẬP NHẬT TRƯỜNG SO SÁNH
+                                { $and: [{ $gte: ["$ngayTinhDoanhThu", startOfMonth] }, { $lte: ["$ngayTinhDoanhThu", endOfMonth] }] },
                                 "$soTienThu", 0
                             ]
                         }
