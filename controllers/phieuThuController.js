@@ -127,7 +127,6 @@ exports.getAllPhieuThu = async (req, res) => {
   }
 };
 
-/* ================= TẠO PHIẾU THU (THÁC NƯỚC CHUẨN) ================= */
 /* ================= TẠO PHIẾU THU (TÔN TRỌNG PHÂN BỔ THỰC TẾ) ================= */
 exports.createPhieuThu = async (req, res) => {
   const session = await mongoose.startSession();
@@ -137,7 +136,7 @@ exports.createPhieuThu = async (req, res) => {
 
     await session.withTransaction(async () => {
       // 🔥 BƯỚC 1: Bốc thêm mảng danhSachHoaDon do Frontend phân bổ gửi lên
-      const { nhaKhoaId, soTienThu, ngayThu, noiDung, phuongThucThanhToan, danhSachHoaDon } = req.body;
+      const { nhaKhoaId, soTienThu, ngayThu, noiDung, phuongThucThanhToan, danhSachHoaDon, ngayGhiNhanDoanhThu } = req.body;
 
       if (!nhaKhoaId || !soTienThu || Number(soTienThu) <= 0) {
         throw new Error("Thông tin thanh toán không hợp lệ");
@@ -221,10 +220,11 @@ exports.createPhieuThu = async (req, res) => {
 
       const newPhieuThu = new (mongoose.model("PhieuThu"))({
         soPhieuThu,
-        nhaKhoa: nhaKhoaId, // ✅ ĐÃ FIX LỖI CHÍ MẠNG LÀM CHẾT BÁO CÁO DOANH THU
+        nhaKhoa: nhaKhoaId,
         danhSachHoaDon: danhSachLuu,
         nguoiTao: req.user?.id || req.user?._id || undefined,
         ngayThu: ngayThuDate,
+        ngayGhiNhanDoanhThu: ngayGhiNhanDoanhThu ? new Date(ngayGhiNhanDoanhThu) : undefined,
         soTienThu: tongTienThuThucTe,
         duocKhauTru: tongKhauTruThucTe,
         conThua: conThua,
@@ -251,7 +251,7 @@ exports.updatePhieuThu = async (req, res) => {
     let updatedPhieu;
     await session.withTransaction(async () => {
       const { id } = req.params;
-      const { ngayThu, phuongThucThanhToan, noiDung, danhSachHoaDon } = req.body;
+      const { ngayThu, phuongThucThanhToan, noiDung, danhSachHoaDon, ngayGhiNhanDoanhThu } = req.body;
 
       const phieuThu = await PhieuThu.findById(id).session(session);
       if (!phieuThu) throw new Error("Không tìm thấy phiếu thu");
@@ -266,6 +266,10 @@ exports.updatePhieuThu = async (req, res) => {
       if (ngayThu !== undefined) phieuThu.ngayThu = ngayThu;
       if (phuongThucThanhToan !== undefined) phieuThu.phuongThucThanhToan = phuongThucThanhToan;
       if (noiDung !== undefined) phieuThu.noiDung = noiDung;
+
+      if (ngayGhiNhanDoanhThu !== undefined) {
+        phieuThu.ngayGhiNhanDoanhThu = ngayGhiNhanDoanhThu ? new Date(ngayGhiNhanDoanhThu) : null;
+      }
 
       // 2. Kế toán phân bổ lại tiền cho từng hóa đơn
       if (danhSachHoaDon && Array.isArray(danhSachHoaDon)) {

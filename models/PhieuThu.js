@@ -41,6 +41,10 @@ const phieuThuSchema = new mongoose.Schema(
       required: true,
     },
 
+    ngayGhiNhanDoanhThu: {
+      type: Date,
+    },
+
     soTienThu: {
       type: Number,
       required: true,
