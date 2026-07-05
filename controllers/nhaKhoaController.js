@@ -27,17 +27,17 @@ exports.getAllNhaKhoa = async (req, res) => {
       NhaKhoa.find(),
       getCongNoTatCaNhaKhoa(),
     ]);
- 
+
     // Map công nợ theo nhaKhoaId để tra cứu O(1)
     const congNoMap = new Map(
       danhSachCongNo.map((item) => [item.nhaKhoaId.toString(), item.tongCongNo])
     );
- 
+
     const data = danhSach.map((nk) => ({
       ...nk.toObject(),
       tongCongNo: congNoMap.get(nk._id.toString()) ?? 0,
     }));
- 
+
     res.json(data);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -210,5 +210,36 @@ exports.updateNhaKhoa = async (req, res) => {
     res.status(500).json({
       message: err.message,
     });
+  }
+};
+
+// ================= XÓA NHA KHOA =================
+exports.deleteNhaKhoa = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "ID nha khoa không hợp lệ" });
+    }
+
+    // Chặn xóa nếu nha khoa còn công nợ hoặc còn hóa đơn liên quan,
+    // tránh mất dữ liệu lịch sử giao dịch không mong muốn.
+    const soHoaDonLienQuan = await HoaDon.countDocuments({ nhaKhoa: id });
+    if (soHoaDonLienQuan > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Không thể xóa vì nha khoa này còn ${soHoaDonLienQuan} hóa đơn liên quan. Vui lòng xử lý hóa đơn trước khi xóa.`,
+      });
+    }
+
+    const deleted = await NhaKhoa.findByIdAndDelete(id);
+
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy nha khoa" });
+    }
+
+    res.json({ success: true, message: "Đã xóa nha khoa thành công", data: deleted });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
