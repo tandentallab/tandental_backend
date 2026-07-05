@@ -29,6 +29,19 @@ const calculateConLai = (giaTriThanhToan, daThanhToan) => {
   return roundMoney(Number(giaTriThanhToan || 0) - Number(daThanhToan || 0));
 };
 
+const createVietnameseRegex = (keyword) => {
+  if (!keyword) return null;
+  let str = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').toLowerCase();
+  str = str.replace(/a|á|à|ả|ã|ạ|â|ấ|ầ|ẩ|ẫ|ậ|ă|ắ|ằ|ẳ|ẵ|ặ/g, '[aáàảãạâấầẩẫậăắằẳẵặ]');
+  str = str.replace(/e|é|è|ẻ|ẽ|ẹ|ê|ế|ề|ể|ễ|ệ/g, '[eéèẻẽẹêếềểễệ]');
+  str = str.replace(/i|í|ì|ỉ|ĩ|ị/g, '[iíìỉĩị]');
+  str = str.replace(/o|ó|ò|ỏ|õ|ọ|ô|ố|ồ|ổ|ỗ|ộ|ơ|ớ|ờ|ở|ỡ|ợ/g, '[oóòỏõọôốồổỗộơớờởỡợ]');
+  str = str.replace(/u|ú|ù|ủ|ũ|ụ|ư|ứ|ừ|ử|ữ|ự/g, '[uúùủũụưứừửữự]');
+  str = str.replace(/y|ý|ỳ|ỷ|ỹ|ỵ/g, '[yýỳỷỹỵ]');
+  str = str.replace(/d|đ/g, '[dđ]');
+  return new RegExp(str, 'i');
+};
+
 
 const autoTrangThai = (conLai, daThanhToan, currentTrangThai) => {
   if (currentTrangThai === "Lưu tạm") return "Lưu tạm";
@@ -509,9 +522,27 @@ exports.getAllHoaDonAdmin = async (req, res) => {
     // --- LỌC THEO TỪ KHÓA TÌM KIẾM ---
     if (search && search.trim() !== "") {
       const keyword = search.trim();
+      const searchRegex = createVietnameseRegex(keyword); // Tạo Regex không dấu
+
       let orConditions = [
-        { soHoaDon: { $regex: keyword, $options: "i" } }
+        { soHoaDon: { $regex: searchRegex } } // Vẫn tìm theo số hóa đơn bằng regex
       ];
+
+      // BƯỚC MỚI: TÌM CÁC NHA KHOA CÓ TÊN KHỚP VỚI TỪ KHÓA (Bỏ qua dấu)
+      // Tùy theo schema của bạn lưu tên là tenNhaKhoa hay hoVaTen mà điều chỉnh nhé
+      const matchedNhaKhoas = await mongoose.model('NhaKhoa').find({
+        $or: [
+          { tenNhaKhoa: { $regex: searchRegex } },
+          { hoVaTen: { $regex: searchRegex } }
+        ]
+      }).select('_id');
+
+      const matchedNhaKhoaIds = matchedNhaKhoas.map(nk => nk._id);
+
+      // Nếu tìm thấy nha khoa nào khớp chữ, đẩy danh sách ID vào điều kiện tìm kiếm Hóa Đơn
+      if (matchedNhaKhoaIds.length > 0) {
+        orConditions.push({ nhaKhoa: { $in: matchedNhaKhoaIds } });
+      }
 
       // TỐI ƯU: Chỉ chạy $expr (Full Scan) nếu từ khóa giống format mã nội bộ 'TAN...'
       if (keyword.toUpperCase().startsWith("TAN")) {
@@ -527,6 +558,7 @@ exports.getAllHoaDonAdmin = async (req, res) => {
           },
         });
       }
+
       query.$or = orConditions;
     }
 
