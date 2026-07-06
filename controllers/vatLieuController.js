@@ -26,8 +26,12 @@ exports.createVatLieu = async (req, res) => {
 exports.getAllVatLieu = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
-    const skip = (page - 1) * limit;
+
+    // ── Xử lý limit: -1 nghĩa là lấy tất cả ────────────────────────────────
+    const rawLimit = parseInt(req.query.limit);
+    const getAll = rawLimit === -1;
+    const limit = getAll ? 0 : Math.min(100, Math.max(1, rawLimit || 20));
+    const skip = getAll ? 0 : (page - 1) * limit;
 
     // ── Build filter ──────────────────────────────────────────────────────
     const filter = {};
@@ -69,23 +73,27 @@ exports.getAllVatLieu = async (req, res) => {
     }
 
     // ── Query ─────────────────────────────────────────────────────────────
+    let query = VatLieu.find(filter)
+      .populate("nhaCungCap", "ten soDienThoai email")
+      .sort({ createdAt: -1 });
+
+    if (!getAll) {
+      query = query.skip(skip).limit(limit);
+    }
+
     const [data, total] = await Promise.all([
-      VatLieu.find(filter)
-        .populate("nhaCungCap", "ten soDienThoai email")
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit),
+      query,
       VatLieu.countDocuments(filter),
     ]);
 
     res.json({
       data,
       pagination: {
-        page,
-        limit,
+        page: getAll ? 1 : page,
+        limit: getAll ? total : limit,
         total,
-        totalPages: Math.ceil(total / limit),
-        hasMore: page * limit < total,
+        totalPages: getAll ? 1 : Math.ceil(total / limit),
+        hasMore: getAll ? false : page * limit < total,
       },
     });
   } catch (err) {
