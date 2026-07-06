@@ -35,20 +35,34 @@ exports.getAllVatLieu = async (req, res) => {
 
     // ── Build filter ──────────────────────────────────────────────────────
     const filter = {};
+    const andConditions = [];
 
-    // Tìm kiếm full-text đơn giản (regex)
+    // Tìm kiếm full-text đơn giản (regex) trên nhiều trường
     if (req.query.search?.trim()) {
       const kw = req.query.search.trim();
       const re = new RegExp(kw, "i");
-      filter.$or = [
-        { maVatLieu: re },
-        { tenVatLieu: re },
-        { loaiVatLieu: re },
-        { nhomVatLieu: re },
-        { formRang: re },
-        { mauRang: re },
-        { donViTinh: re },
-      ];
+      andConditions.push({
+        $or: [
+          { maVatLieu: re },
+          { tenVatLieu: re },
+          { loaiVatLieu: re },
+          { nhomVatLieu: re },
+          { formRang: re },
+          { mauRang: re },
+          { donViTinh: re },
+        ],
+      });
+    }
+
+    // Tìm kiếm riêng theo tên vật liệu
+    if (req.query.name?.trim()) {
+      const nameKw = req.query.name.trim();
+      const nameRe = new RegExp(nameKw, "i");
+      andConditions.push({ tenVatLieu: nameRe });
+    }
+
+    if (andConditions.length > 0) {
+      filter.$and = andConditions;
     }
 
     if (req.query.nhaCungCap) {
