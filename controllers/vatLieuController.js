@@ -115,6 +115,25 @@ exports.getAllVatLieu = async (req, res) => {
   }
 };
 
+/**
+ * GET /kho/vat-lieu/thong-ke
+ * Trả về số liệu tổng quan tính trên TOÀN BỘ collection (không phụ thuộc
+ * phân trang/lazy-loading của danh sách vật liệu ở frontend):
+ *   - tongVatLieu     : tổng số vật liệu
+ *   - soHangThieuHang : số vật liệu có soLuong < tonKhoToiThieu
+ */
+exports.getThongKeVatLieu = async (req, res) => {
+  try {
+    const [tongVatLieu, soHangThieuHang] = await Promise.all([
+      VatLieu.countDocuments(),
+      VatLieu.countDocuments({ $expr: { $lt: ["$soLuong", "$tonKhoToiThieu"] } }),
+    ]);
+    res.json({ tongVatLieu, soHangThieuHang });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 exports.updateVatLieu = async (req, res) => {
   try {
     const { id } = req.params;
