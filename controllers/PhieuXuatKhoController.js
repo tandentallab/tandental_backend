@@ -105,7 +105,7 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
     try {
         const { id } = req.params;
-        const { trangThai, ghiChu, danhSachVatLieu, boPhan, nhanVien } = req.body;
+        const { trangThai, ghiChu, danhSachVatLieu, boPhan, nhanVien, currentRole } = req.body;
 
         const phieu = await PhieuXuatKho.findById(id);
         if (!phieu) {
@@ -113,10 +113,12 @@ exports.update = async (req, res) => {
         }
 
         if (phieu.trangThai === "Đã xuất" && (danhSachVatLieu || boPhan || nhanVien)) {
-            return res.status(400).json({
-                success: false,
-                message: "Không thể chỉnh sửa phiếu đã xuất hàng",
-            });
+            if (currentRole !== "Admin") {
+                return res.status(400).json({
+                    success: false,
+                    message: "Không thể chỉnh sửa phiếu đã xuất hàng",
+                });
+            }
         }
 
         // Chuyển sang "Đã xuất" → kiểm tra tồn kho rồi trừ
