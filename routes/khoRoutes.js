@@ -16,8 +16,6 @@ const {
   updateVatLieu,
   deleteVatLieu,
   deleteVatLieuMany,
-  seedVatLieuTest,
-  deleteVatLieuTest,
 } = require("../controllers/vatLieuController");
 
 const { verifyToken, checkPermission } = require("../middleware/authMiddleware");
