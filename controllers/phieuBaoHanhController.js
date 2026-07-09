@@ -102,20 +102,8 @@ exports.createPhieuBaoHanh = async (req, res) => {
     };
 
     if (phieu) {
-      // Update phiếu bảo hành hiện tại
-      const existingSanPhamIds = phieu.danhSachBaoHanh.map(item => 
-        item.sanPham._id ? item.sanPham._id.toString() : item.sanPham.toString()
-      );
-      
-      const newProducts = safeDanhSachBaoHanh.filter(item => {
-        const itemId = item.sanPham._id ? item.sanPham._id.toString() : item.sanPham.toString();
-        return !existingSanPhamIds.includes(itemId);
-      });
-      
-      if (newProducts.length > 0) {
-        phieu.danhSachBaoHanh.push(...newProducts);
-      }
-      
+      // Ghi đè danh sách sản phẩm bảo hành bằng dữ liệu mới nhất từ client gửi lên (giúp đồng bộ cập nhật số lượng, vị trí răng, màu sắc, thời hạn bảo hành...)
+      phieu.danhSachBaoHanh = safeDanhSachBaoHanh;
       Object.assign(phieu, baseData);
     } else {
       // Tạo phiếu bảo hành mới

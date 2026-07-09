@@ -499,9 +499,81 @@ exports.updateDonHang = async (req, res) => {
             return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
         }
 
-        // Query phiếu bảo hành từ collection
-        const phieuBaoHanh = await PhieuBaoHanh.findOne({ donHang: req.params.id })
-            .populate("danhSachBaoHanh.sanPham", "tenSanPham");
+        // Tự động đồng bộ Phiếu bảo hành nếu có phiếu liên kết với đơn hàng này
+        let phieuBaoHanh = await PhieuBaoHanh.findOne({ donHang: req.params.id });
+        if (phieuBaoHanh) {
+            phieuBaoHanh.nhaKhoa = updatedDonHang.nhaKhoa?._id || updatedDonHang.nhaKhoa;
+            phieuBaoHanh.bacSi = updatedDonHang.bacSi?._id || updatedDonHang.bacSi;
+            phieuBaoHanh.benhNhan = updatedDonHang.benhNhan?._id || updatedDonHang.benhNhan;
+            phieuBaoHanh.soDienThoai = updatedDonHang.nhaKhoa?.soDienThoai || "";
+            if (updatedDonHang.maDonHang) {
+                phieuBaoHanh.maBaoHanh = updatedDonHang.maDonHang;
+            }
+
+            const formatViTri = (viTriArr) => {
+                if (!viTriArr || viTriArr.length === 0) return "";
+                return viTriArr
+                    .map((v) =>
+                        v.kieu === "Rời" || v.soRang.length === 1
+                            ? v.soRang.join(", ")
+                            : `${v.soRang[0]}->${v.soRang[v.soRang.length - 1]}`
+                    )
+                    .join("; ");
+            };
+
+            const orderProducts = (updatedDonHang.danhSachSanPham || []).filter(
+                (sp) => sp.loaiDon === "Mới"
+            );
+
+            // 1. Lọc bỏ các sản phẩm bảo hành không còn trong Đơn hàng
+            const orderProductIds = orderProducts.map((sp) =>
+                (sp.sanPham?._id || sp.sanPham).toString()
+            );
+            phieuBaoHanh.danhSachBaoHanh = phieuBaoHanh.danhSachBaoHanh.filter((item) =>
+                orderProductIds.includes((item.sanPham?._id || item.sanPham).toString())
+            );
+
+            // 2. Cập nhật hoặc thêm mới sản phẩm bảo hành
+            orderProducts.forEach((sp) => {
+                const spId = (sp.sanPham?._id || sp.sanPham).toString();
+                const existingItem = phieuBaoHanh.danhSachBaoHanh.find(
+                    (item) => (item.sanPham?._id || item.sanPham).toString() === spId
+                );
+
+                const currentViTriRang = formatViTri(sp.viTri);
+                const currentSoLuong = Number(sp.soLuong) || 1;
+                const currentMau = sp.mau || "";
+
+                if (existingItem) {
+                    existingItem.viTriRang = currentViTriRang;
+                    existingItem.soLuong = currentSoLuong;
+                    existingItem.mau = currentMau;
+                } else {
+                    const defaultYears = sp.sanPham?.baoHanhMacDinh || 0;
+                    const startDate = updatedDonHang.ngayNhan
+                        ? new Date(updatedDonHang.ngayNhan)
+                        : new Date();
+                    const endDate = new Date(startDate);
+                    endDate.setFullYear(endDate.getFullYear() + defaultYears);
+
+                    phieuBaoHanh.danhSachBaoHanh.push({
+                        sanPham: sp.sanPham?._id || sp.sanPham,
+                        viTriRang: currentViTriRang,
+                        soLuong: currentSoLuong,
+                        mau: currentMau,
+                        tenSanPhamBaoHanh: sp.sanPham?.tenSanPham || "",
+                        baoHanhTu: startDate,
+                        baoHanhDen: endDate,
+                    });
+                }
+            });
+
+            await phieuBaoHanh.save();
+
+            // Reload lại để populate đầy đủ trả về frontend
+            phieuBaoHanh = await PhieuBaoHanh.findById(phieuBaoHanh._id)
+                .populate("danhSachBaoHanh.sanPham", "tenSanPham");
+        }
 
         // Convert Mongoose doc sang object và thêm phiếu bảo hành
         const updatedDonHangObj = updatedDonHang.toObject ? updatedDonHang.toObject() : updatedDonHang;
