@@ -12,9 +12,12 @@ const {
   createVatLieu,
   getAllVatLieu,
   getThongKeVatLieu,
+  getTuyChonVatLieu,
   updateVatLieu,
   deleteVatLieu,
   deleteVatLieuMany,
+  seedVatLieuTest,
+  deleteVatLieuTest,
 } = require("../controllers/vatLieuController");
 
 const { verifyToken, checkPermission } = require("../middleware/authMiddleware");
@@ -27,6 +30,9 @@ router.delete("/nha-cung-cap/:id", verifyToken, checkPermission, deleteNhaCungCa
 
 // ===== VẬT LIỆU =====
 router.get("/vat-lieu/thong-ke", verifyToken, checkPermission, getThongKeVatLieu); // đặt trước /vat-lieu/:id để tránh xung đột route
+router.get("/vat-lieu/tuy-chon", verifyToken, checkPermission, getTuyChonVatLieu); // đặt trước /vat-lieu/:id để tránh xung đột route
+
+
 router.get("/vat-lieu", verifyToken, checkPermission, getAllVatLieu);
 router.post("/vat-lieu", verifyToken, checkPermission, createVatLieu);
 router.delete("/vat-lieu", verifyToken, checkPermission, deleteVatLieuMany); // xóa nhiều
