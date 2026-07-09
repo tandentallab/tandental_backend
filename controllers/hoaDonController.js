@@ -29,6 +29,19 @@ const calculateConLai = (giaTriThanhToan, daThanhToan) => {
   return roundMoney(Number(giaTriThanhToan || 0) - Number(daThanhToan || 0));
 };
 
+const createVietnameseRegex = (keyword) => {
+  if (!keyword) return null;
+  let str = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').toLowerCase();
+  str = str.replace(/a|á|à|ả|ã|ạ|â|ấ|ầ|ẩ|ẫ|ậ|ă|ắ|ằ|ẳ|ẵ|ặ/g, '[aáàảãạâấầẩẫậăắằẳẵặ]');
+  str = str.replace(/e|é|è|ẻ|ẽ|ẹ|ê|ế|ề|ể|ễ|ệ/g, '[eéèẻẽẹêếềểễệ]');
+  str = str.replace(/i|í|ì|ỉ|ĩ|ị/g, '[iíìỉĩị]');
+  str = str.replace(/o|ó|ò|ỏ|õ|ọ|ô|ố|ồ|ổ|ỗ|ộ|ơ|ớ|ờ|ở|ỡ|ợ/g, '[oóòỏõọôốồổỗộơớờởỡợ]');
+  str = str.replace(/u|ú|ù|ủ|ũ|ụ|ư|ứ|ừ|ử|ữ|ự/g, '[uúùủũụưứừửữự]');
+  str = str.replace(/y|ý|ỳ|ỷ|ỹ|ỵ/g, '[yýỳỷỹỵ]');
+  str = str.replace(/d|đ/g, '[dđ]');
+  return new RegExp(str, 'i');
+};
+
 
 const autoTrangThai = (conLai, daThanhToan, currentTrangThai) => {
   if (currentTrangThai === "Lưu tạm") return "Lưu tạm";
@@ -339,7 +352,6 @@ exports.createHoaDon = async (req, res) => {
       if (!tuNgay || !denNgay) throw new Error("Vui lòng chọn khoảng thời gian chốt hóa đơn (tuNgay, denNgay)");
       if (Number(chietKhau) < 0) throw new Error("Chiết khấu không hợp lệ");
 
-      // 🔥 LẤY ĐÚNG NGÀY KẾ TOÁN CHỌN - KHÔNG RÀNG BUỘC
       // Ép chuẩn giờ VN để không bị lệch múi giờ
       const finalTuNgay = dayjs(tuNgay).tz(VN_TZ).startOf('day').toDate();
       const finalDenNgay = dayjs(denNgay).tz(VN_TZ).endOf('day').toDate();
@@ -348,13 +360,24 @@ exports.createHoaDon = async (req, res) => {
         throw new Error("Ngày bắt đầu không thể lớn hơn ngày kết thúc.");
       }
 
-      // ================= TẠO MÃ HÓA ĐƠN THEO FORMAT MỚI =================
+      // Mốc thời gian thực hiện tại (ở múi giờ VN)
       const now = dayjs().tz(VN_TZ);
-      const yearStr = now.format("YY"); // Lấy 2 số cuối của năm (VD: 26)
-      const monthStr = now.format("MM"); // Lấy 2 số của tháng (VD: 05)
+
+      // --- CẬP NHẬT LOGIC KIỂM TRA NGÀY XUẤT ---
+      // Mặc định ban đầu = Đến ngày filter
+      let ngayXuatHoaDon = finalDenNgay;
+
+      // Nếu ngày xuất dự kiến (finalDenNgay) lớn hơn ngày hiện tại, tự động cập nhật về thời gian hiện tại
+      if (dayjs(ngayXuatHoaDon).isAfter(now)) {
+        ngayXuatHoaDon = now.toDate();
+      }
+      // ----------------------------------------
+
+      // ================= TẠO MÃ HÓA ĐƠN THEO FORMAT MỚI =================
+      const yearStr = now.format("YY");
+      const monthStr = now.format("MM");
       const prefix = `HD${yearStr}${monthStr}`;
 
-      // Tìm hóa đơn mới nhất trong tháng hiện tại
       const lastHoaDon = await mongoose.model("HoaDon").findOne(
         { soHoaDon: new RegExp(`^${prefix}`) },
         { soHoaDon: 1 }
@@ -362,17 +385,12 @@ exports.createHoaDon = async (req, res) => {
 
       let nextNumber = 1;
       if (lastHoaDon && lastHoaDon.soHoaDon) {
-        // Cắt lấy 4 số cuối cùng và cộng thêm 1
         const lastNumber = parseInt(lastHoaDon.soHoaDon.slice(-4), 10);
-        if (!isNaN(lastNumber)) {
-          nextNumber = lastNumber + 1;
-        }
+        if (!isNaN(lastNumber)) nextNumber = lastNumber + 1;
       }
 
-      // Ép thành chuỗi 4 chữ số (VD: 1 -> 0001, 15 -> 0015)
       const sttStr = nextNumber.toString().padStart(4, "0");
       const maSoHoaDon = `${prefix}${sttStr}`;
-
       const newHoaDonId = new mongoose.Types.ObjectId();
       // ================================================================
 
@@ -399,19 +417,17 @@ exports.createHoaDon = async (req, res) => {
       const nhaKhoaInfo = await mongoose.model("NhaKhoa").findById(nhaKhoaId).session(session);
       if (!nhaKhoaInfo) throw new Error("Không tìm thấy Nha Khoa");
 
-      // Chỉ tính thuần túy phát sinh của kỳ này
       const phatSinhKyNay = calculateGiaTriThanhToan({ tongCong, chietKhau, thue, chiPhiKhac });
-
-      // Giá trị thanh toán bây giờ chỉ bằng đúng phát sinh kỳ này (Không cộng nợ cũ nữa)
       const giaTriThanhToan = phatSinhKyNay;
       const conLai = giaTriThanhToan;
 
       const newHoaDon = new HoaDon({
         _id: newHoaDonId,
-        soHoaDon: maSoHoaDon, // Dùng mã hóa đơn mới sinh ra
+        soHoaDon: maSoHoaDon,
         nhaKhoa: nhaKhoaId,
         tuNgay: finalTuNgay,
         denNgay: finalDenNgay,
+        ngayXuatHoaDon, // 🔥 Đã được chuẩn hóa tự động ở phía trên
         danhSachSanPham,
         tongCong: roundMoney(tongCong),
         chietKhau: roundMoney(chietKhau),
@@ -420,7 +436,6 @@ exports.createHoaDon = async (req, res) => {
         giaTriThanhToan,
         daThanhToan: 0,
         conLai,
-        // 🔥 ĐÃ XÓA noDauKy VÀ soDuMigrate KHỎI PAYLOAD LƯU DB
         trangThai: "Lưu tạm",
         ghiChuNoiBo,
         ghiChuChoKhachHang,
@@ -507,9 +522,27 @@ exports.getAllHoaDonAdmin = async (req, res) => {
     // --- LỌC THEO TỪ KHÓA TÌM KIẾM ---
     if (search && search.trim() !== "") {
       const keyword = search.trim();
+      const searchRegex = createVietnameseRegex(keyword); // Tạo Regex không dấu
+
       let orConditions = [
-        { soHoaDon: { $regex: keyword, $options: "i" } }
+        { soHoaDon: { $regex: searchRegex } } // Vẫn tìm theo số hóa đơn bằng regex
       ];
+
+      // BƯỚC MỚI: TÌM CÁC NHA KHOA CÓ TÊN KHỚP VỚI TỪ KHÓA (Bỏ qua dấu)
+      // Tùy theo schema của bạn lưu tên là tenNhaKhoa hay hoVaTen mà điều chỉnh nhé
+      const matchedNhaKhoas = await mongoose.model('NhaKhoa').find({
+        $or: [
+          { tenNhaKhoa: { $regex: searchRegex } },
+          { hoVaTen: { $regex: searchRegex } }
+        ]
+      }).select('_id');
+
+      const matchedNhaKhoaIds = matchedNhaKhoas.map(nk => nk._id);
+
+      // Nếu tìm thấy nha khoa nào khớp chữ, đẩy danh sách ID vào điều kiện tìm kiếm Hóa Đơn
+      if (matchedNhaKhoaIds.length > 0) {
+        orConditions.push({ nhaKhoa: { $in: matchedNhaKhoaIds } });
+      }
 
       // TỐI ƯU: Chỉ chạy $expr (Full Scan) nếu từ khóa giống format mã nội bộ 'TAN...'
       if (keyword.toUpperCase().startsWith("TAN")) {
@@ -525,6 +558,7 @@ exports.getAllHoaDonAdmin = async (req, res) => {
           },
         });
       }
+
       query.$or = orConditions;
     }
 

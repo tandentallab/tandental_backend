@@ -5,6 +5,7 @@ const {
   createNhaKhoa,
   getAllNhaKhoa,
   updateNhaKhoa,
+  deleteNhaKhoa,
   updateSoDuDauKy,
   upsertGhiChu
 } = require("../controllers/nhaKhoaController");
@@ -16,5 +17,6 @@ router.get("/", verifyToken, checkPermission, getAllNhaKhoa);
 router.put('/:id/so-du-dau-ky', updateSoDuDauKy);
 router.put("/:id/ghi-chu", verifyToken, checkPermission, upsertGhiChu);
 router.put("/:id", verifyToken, checkPermission, updateNhaKhoa)
+router.delete("/:id", verifyToken, checkPermission, deleteNhaKhoa);
 
 module.exports = router;

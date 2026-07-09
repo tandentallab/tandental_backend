@@ -138,7 +138,7 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
     try {
         const { id } = req.params;
-        const { trangThaiNhap, trangThaiThanhToan, nhaCungCap, ghiChu, danhSachVatLieu } =
+        const { trangThaiNhap, trangThaiThanhToan, nhaCungCap, ghiChu, danhSachVatLieu, currentRole } =
             req.body;
 
         const phieu = await PhieuNhapKho.findById(id);
@@ -153,10 +153,12 @@ exports.update = async (req, res) => {
             phieu.trangThaiNhap === "Đã nhận" &&
             (danhSachVatLieu !== undefined || nhaCungCap !== undefined)
         ) {
-            return res.status(400).json({
-                success: false,
-                message: "Không thể chỉnh sửa phiếu đã nhận hàng",
-            });
+            if (currentRole !== "Admin") {
+                return res.status(400).json({
+                    success: false,
+                    message: "Không thể chỉnh sửa phiếu đã nhận hàng",
+                });
+            }
         }
 
         // Chuyển sang "Đã nhận" → cộng tồn kho + ghi ngày nhận

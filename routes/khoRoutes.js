@@ -11,6 +11,7 @@ const {
 const {
   createVatLieu,
   getAllVatLieu,
+  getThongKeVatLieu,
   updateVatLieu,
   deleteVatLieu,
   deleteVatLieuMany,
@@ -25,6 +26,7 @@ router.put("/nha-cung-cap/:id", verifyToken, checkPermission, updateNhaCungCap);
 router.delete("/nha-cung-cap/:id", verifyToken, checkPermission, deleteNhaCungCap);
 
 // ===== VẬT LIỆU =====
+router.get("/vat-lieu/thong-ke", verifyToken, checkPermission, getThongKeVatLieu); // đặt trước /vat-lieu/:id để tránh xung đột route
 router.get("/vat-lieu", verifyToken, checkPermission, getAllVatLieu);
 router.post("/vat-lieu", verifyToken, checkPermission, createVatLieu);
 router.delete("/vat-lieu", verifyToken, checkPermission, deleteVatLieuMany); // xóa nhiều
