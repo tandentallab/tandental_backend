@@ -92,6 +92,7 @@ exports.create = async (req, res) => {
             ghiChu,
         });
         const saved = await newPhieu.save();
+        await saved.populate("danhSachVatLieu.vatLieu", "tenVatLieu maVatLieu donViTinh soLuong");
 
         res.status(201).json({ success: true, data: saved });
     } catch (error) {
@@ -241,6 +242,8 @@ exports.update = async (req, res) => {
         phieu.ngayCapNhat = new Date();
 
         const updated = await phieu.save();
+        await updated.populate("danhSachVatLieu.vatLieu", "tenVatLieu maVatLieu donViTinh soLuong");
+
         res.status(200).json({ success: true, data: updated });
     } catch (error) {
         res.status(500).json({
