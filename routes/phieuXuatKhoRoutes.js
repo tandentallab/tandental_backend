@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const phieuXuatKhoController = require('../controllers/PhieuXuatKhoController');
+const phieuXuatKhoController = require('../controllers/phieuXuatKhoController');
 
 router.get('/', phieuXuatKhoController.getAll);
 router.post('/', phieuXuatKhoController.create);

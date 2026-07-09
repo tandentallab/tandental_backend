@@ -1,6 +1,6 @@
 const exporess = require('express');
 const router = exporess.Router();
-const phieuNhapKhoController = require('../controllers/PhieuNhapKhoController');
+const phieuNhapKhoController = require('../controllers/phieuNhapKhoController');
 const { verifyToken, checkPermission } = require("../middleware/authMiddleware");
 
 router.get('/', phieuNhapKhoController.getAll);
