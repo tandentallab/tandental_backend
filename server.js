@@ -32,6 +32,7 @@ const searchRoutes = require("./routes/searchRoutes");
 const activityLogRoutes = require("./routes/activityLogRoutes");
 const ghiChuRoutes = require("./routes/ghiChuRoutes");
 const chiPhiRoutes = require('./routes/chiPhiRoutes');
+const phieuMuonVatLieu = require('./routes/phieuMuonVatLieuRoutes');
 
 const app = express();
 
@@ -75,6 +76,7 @@ const startServer = async () => {
     app.use("/api/kho", khoRoutes);
     app.use("/api/phieu-nhap-kho", phieuNhapKhoRoutes);
     app.use("/api/phieu-xuat-kho", phieuXuatKhoRoutes);
+    app.use("/api/phieu-muon-vat-lieu", phieuMuonVatLieu);
     app.use("/api/phieu-bao-hanh", phieuBaoHanhRoutes);
     app.use("/api/mau-the-bao-hanh", mauTheBaoHanhRoutes);
     app.use("/api/public", publicRoutes);
