@@ -134,6 +134,35 @@ exports.getThongKeVatLieu = async (req, res) => {
   }
 };
 
+/**
+ * GET /kho/vat-lieu/tuy-chon
+ * Trả về danh sách GIÁ TRỊ DUY NHẤT (distinct) của các trường phân loại,
+ * tính trên TOÀN BỘ collection (không phụ thuộc phân trang/lazy-loading):
+ *   - nhomVatLieu, loaiVatLieu : dùng cho dropdown lọc ở filter bar
+ *   - formRang, mauRang        : dùng cho SelectWithAdd trong modal thêm/sửa
+ * Trước đây các danh sách này được suy ra từ mảng vatLieu đã lazy-load ở
+ * frontend nên thiếu các giá trị thuộc những vật liệu chưa được tải.
+ */
+exports.getTuyChonVatLieu = async (req, res) => {
+  try {
+    const [nhomVatLieu, loaiVatLieu, formRang, mauRang] = await Promise.all([
+      VatLieu.distinct("nhomVatLieu"),
+      VatLieu.distinct("loaiVatLieu"),
+      VatLieu.distinct("formRang"),
+      VatLieu.distinct("mauRang"),
+    ]);
+    const clean = (arr) => arr.filter(Boolean).sort();
+    res.json({
+      nhomVatLieu: clean(nhomVatLieu),
+      loaiVatLieu: clean(loaiVatLieu),
+      formRang: clean(formRang),
+      mauRang: clean(mauRang),
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 exports.updateVatLieu = async (req, res) => {
   try {
     const { id } = req.params;
