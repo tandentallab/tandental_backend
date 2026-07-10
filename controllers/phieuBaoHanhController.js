@@ -28,7 +28,7 @@ exports.createPhieuBaoHanh = async (req, res) => {
 
     // 2. Kiểm tra bắt buộc mẫu thẻ
     if (!mauTheId) {
-        return res.status(400).json({ success: false, message: "Vui lòng chọn mẫu thẻ bảo hành" });
+      return res.status(400).json({ success: false, message: "Vui lòng chọn mẫu thẻ bảo hành" });
     }
 
     if (!donHang) {
@@ -44,7 +44,7 @@ exports.createPhieuBaoHanh = async (req, res) => {
 
     // Lấy thông tin đơn hàng
     const donHangRecord = await DonHang.findById(donHang);
-    
+
     // Nếu tạo mới hoàn toàn, bắt buộc đơn hàng phải tồn tại
     if (!phieu && !donHangRecord) {
       return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng để tạo phiếu bảo hành" });
@@ -127,7 +127,7 @@ exports.createPhieuBaoHanh = async (req, res) => {
     if (donHangRecord && donHangRecord.maDonHang) {
       phieu.maBaoHanh = donHangRecord.maDonHang;
     }
-    
+
     await phieu.save();
 
     // Populate dữ liệu để trả về
@@ -165,7 +165,7 @@ exports.getAllPhieuBaoHanh = async (req, res) => {
     const toDate = req.query.toDate;
 
     let query = {};
-    
+
     if (nhaKhoaId && nhaKhoaId !== "all") {
       query.nhaKhoa = nhaKhoaId;
     }
@@ -177,7 +177,7 @@ exports.getAllPhieuBaoHanh = async (req, res) => {
     }
     if (search && search.trim() !== "") {
       const keyword = search.trim();
-      
+
       // Tìm trước ID của Đơn hàng và Bệnh nhân khớp với keyword
       const [donHangs, benhNhans] = await Promise.all([
         DonHang.find({ maDonHang: { $regex: keyword, $options: "i" } }).select("_id"),
