@@ -39,14 +39,19 @@ exports.createPhieuBaoHanh = async (req, res) => {
       return res.status(400).json({ success: false, message: "Phiếu bảo hành phải có ít nhất 1 sản phẩm" });
     }
 
+    // Kiểm tra phiếu bảo hành đã tồn tại chưa
+    let phieu = await PhieuBaoHanh.findOne({ donHang });
+
     // Lấy thông tin đơn hàng
     const donHangRecord = await DonHang.findById(donHang);
-    if (!donHangRecord) {
-      return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
+    
+    // Nếu tạo mới hoàn toàn, bắt buộc đơn hàng phải tồn tại
+    if (!phieu && !donHangRecord) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng để tạo phiếu bảo hành" });
     }
 
     // Xử lý phiếu bảo hành mồ côi (tránh lỗi E11000 trùng mã bảo hành khi đơn hàng cũ đã bị xóa)
-    const maBaoHanhTarget = donHangRecord.maDonHang;
+    const maBaoHanhTarget = donHangRecord?.maDonHang;
     if (maBaoHanhTarget) {
       const phieuTrungMa = await PhieuBaoHanh.findOne({ maBaoHanh: maBaoHanhTarget });
       if (phieuTrungMa && phieuTrungMa.donHang?.toString() !== donHang) {
@@ -64,7 +69,7 @@ exports.createPhieuBaoHanh = async (req, res) => {
       }
     }
 
-    const nhaKhoaRecord = donHangRecord.nhaKhoa
+    const nhaKhoaRecord = donHangRecord && donHangRecord.nhaKhoa
       ? await NhaKhoa.findById(donHangRecord.nhaKhoa).select("hoVaTen tenGiaoDich soDienThoai")
       : null;
 
@@ -84,17 +89,14 @@ exports.createPhieuBaoHanh = async (req, res) => {
       return res.status(400).json({ success: false, message: "Dữ liệu sản phẩm bảo hành không hợp lệ" });
     }
 
-    // Kiểm tra phiếu bảo hành đã tồn tại chưa
-    let phieu = await PhieuBaoHanh.findOne({ donHang });
-
     // 3. SỬA ĐỔI: Dùng mauThe (đúng tên field trong Schema) thay vì mauTheTi
     const baseData = {
       donHang,
-      nhaKhoa: donHangRecord.nhaKhoa,
-      bacSi: donHangRecord.bacSi,
-      benhNhan: donHangRecord.benhNhan,
+      nhaKhoa: donHangRecord ? donHangRecord.nhaKhoa : (phieu ? phieu.nhaKhoa : null),
+      bacSi: donHangRecord ? donHangRecord.bacSi : (phieu ? phieu.bacSi : null),
+      benhNhan: donHangRecord ? donHangRecord.benhNhan : (phieu ? phieu.benhNhan : null),
       mauThe: mauTheId, // Lưu ID của mẫu thẻ (ObjectId)
-      soDienThoai: nhaKhoaRecord?.soDienThoai || "",
+      soDienThoai: donHangRecord ? (nhaKhoaRecord?.soDienThoai || "") : (phieu ? phieu.soDienThoai : ""),
       ghiChu: ghiChu || "",
       nhakhoabh: nhakhoabh || "",
       bacsibh: bacsibh || "",
@@ -106,7 +108,7 @@ exports.createPhieuBaoHanh = async (req, res) => {
       phieu.danhSachBaoHanh = safeDanhSachBaoHanh;
       Object.assign(phieu, baseData);
     } else {
-      // Tạo phiếu bảo hành mới
+      // Tạo phiếu bảo hành mới (bắt buộc có donHangRecord)
       const donHangCodeForRef = (donHangRecord.maDonHang || "").toUpperCase();
       const donHangSuffix = donHangCodeForRef
         ? donHangCodeForRef.slice(-6)
@@ -122,7 +124,7 @@ exports.createPhieuBaoHanh = async (req, res) => {
       });
     }
 
-    if (donHangRecord.maDonHang) {
+    if (donHangRecord && donHangRecord.maDonHang) {
       phieu.maBaoHanh = donHangRecord.maDonHang;
     }
     

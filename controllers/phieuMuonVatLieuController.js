@@ -3,9 +3,9 @@ const VatLieu = require("../models/VatLieu");
 
 exports.getAll = async (req, res) => {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 20;
-        const skip = (page - 1) * limit;
+        // const page = parseInt(req.query.page) || 1;
+        // const limit = parseInt(req.query.limit) || 20;
+        // const skip = (page - 1) * limit;
 
         const filter = {};
 
@@ -42,14 +42,15 @@ exports.getAll = async (req, res) => {
 
         const phieuMuons = await PhieuMuonVatLieu.find(filter)
             .select(
-                "ngayTao loai nhanVien doiTac trangThaiNhan trangThaiTra ghiChu danhSachVatLieu"
+                "soPhieu ngayTao loai nhanVien doiTac trangThaiNhan trangThaiTra ghiChu danhSachVatLieu"
             )
             .populate("danhSachVatLieu.vatLieu", "tenVatLieu donViTinh")
             .sort({ ngayTao: -1 })
-            .skip(skip)
-            .limit(limit);
+        // .skip(skip)
+        // .limit(limit);
 
-        res.status(200).json({ success: true, data: phieuMuons, total, page, limit });
+        // res.status(200).json({ success: true, data: phieuMuons, total, page, limit });
+        res.status(200).json({ success: true, data: phieuMuons, total });
     } catch (error) {
         res.status(500).json({
             success: false,

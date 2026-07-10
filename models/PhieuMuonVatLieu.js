@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 
 const phieuMuonVatLieu = new mongoose.Schema({
+    soPhieu: {
+        type: String,
+        unique: true,
+        index: true
+    },
     loai: {
         type: String,
         enum: ["Mượn", "Cho mượn"],
@@ -49,5 +54,29 @@ const phieuMuonVatLieu = new mongoose.Schema({
         type: Date
     },
 })
+
+phieuMuonVatLieu.pre("save", async function (next) {
+    if (this.soPhieu) return;
+
+    const now = new Date();
+    const yy = now.getFullYear().toString().slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const prefix = `MUON${yy}${mm}`;
+
+    const lastPhieuMuon = await mongoose
+        .model("PhieuMuonVatLieu")
+        .findOne({ soPhieu: { $regex: `^${prefix}` } })
+        .sort({ soPhieu: -1 });
+
+    let nextNumber = 1; // Bắt đầu từ 0001
+    if (lastPhieuMuon?.soPhieu) {
+        const lastNumber = parseInt(lastPhieuMuon.soPhieu.slice(-4), 10);
+        if (Number.isFinite(lastNumber)) {
+            nextNumber = lastNumber + 1;
+        }
+    }
+
+    this.soPhieu = `${prefix}${String(nextNumber).padStart(4, "0")}`;
+});
 
 module.exports = mongoose.model("PhieuMuonVatLieu", phieuMuonVatLieu);
