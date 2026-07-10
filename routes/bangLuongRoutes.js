@@ -8,12 +8,22 @@ const {
   getAllBangLuong,
   getBangLuongById,
   deleteBangLuong,
-  deleteBangLuongByMonthYear
+  deleteBangLuongByMonthYear,
+  getLichSuLuong,
 } = require("../controllers/bangLuongController");
 
 router.post("/", verifyToken, checkPermission, createBangLuong);
 
 router.get("/", verifyToken, checkPermission, getAllBangLuong);
+
+// ⚠️ Route cụ thể "/lich-su/tong-hop" PHẢI khai báo TRƯỚC route "/:id"
+// nếu không Express sẽ hiểu "lich-su" là 1 giá trị :id và gọi nhầm getBangLuongById
+router.get(
+  "/lich-su/tong-hop",
+  verifyToken,
+  checkPermission,
+  getLichSuLuong
+);
 
 router.get("/:id", verifyToken, checkPermission, getBangLuongById);
 
