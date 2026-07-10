@@ -211,3 +211,59 @@ exports.deleteBangLuongByMonthYear = async (req, res) => {
     });
   }
 };
+
+// ================= LỊCH SỬ LƯƠNG CĂN BẢN THEO KHOẢNG THỜI GIAN =================
+// Trả về toàn bộ bảng lương (đã populate nhân viên) trong khoảng [tuThang/tuNam -> denThang/denNam]
+// Frontend sẽ tự dựng bảng pivot: hàng = nhân viên, cột = tháng
+exports.getLichSuLuong = async (req, res) => {
+  try {
+    let { tuThang, tuNam, denThang, denNam } = req.query;
+
+    tuThang = Number(tuThang);
+    tuNam = Number(tuNam);
+    denThang = Number(denThang);
+    denNam = Number(denNam);
+
+    if (!tuThang || !tuNam || !denThang || !denNam) {
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng truyền đủ tuThang, tuNam, denThang, denNam",
+      });
+    }
+
+    // Quy đổi (tháng, năm) -> 1 số nguyên tăng dần để so sánh & lặp khoảng thời gian
+    const start = tuNam * 12 + tuThang;
+    const end = denNam * 12 + denThang;
+
+    if (start > end) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Khoảng thời gian không hợp lệ (Từ tháng phải trước hoặc bằng Đến tháng)",
+      });
+    }
+
+    // Danh sách toàn bộ {thang, nam} nằm trong khoảng đã chọn
+    const periods = [];
+    for (let key = start; key <= end; key++) {
+      const nam = Math.floor((key - 1) / 12);
+      const thang = key - nam * 12;
+      periods.push({ thang, nam });
+    }
+
+    const data = await BangLuong.find({ $or: periods })
+      .populate("nhanVien")
+      .sort({ nam: 1, thang: 1 });
+
+    res.json({
+      success: true,
+      periods,
+      data,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
