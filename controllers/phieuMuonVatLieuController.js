@@ -3,9 +3,9 @@ const VatLieu = require("../models/VatLieu");
 
 exports.getAll = async (req, res) => {
     try {
-        // const page = parseInt(req.query.page) || 1;
-        // const limit = parseInt(req.query.limit) || 20;
-        // const skip = (page - 1) * limit;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const skip = (page - 1) * limit;
 
         const filter = {};
 
@@ -25,7 +25,6 @@ exports.getAll = async (req, res) => {
         }
 
         if (req.query.nhanVien) filter.nhanVien = { $regex: req.query.nhanVien, $options: "i" };
-
         if (req.query.doiTac) filter["doiTac.ten"] = { $regex: req.query.doiTac, $options: "i" };
 
         if (req.query.tuNgay || req.query.denNgay) {
@@ -41,16 +40,13 @@ exports.getAll = async (req, res) => {
         const total = await PhieuMuonVatLieu.countDocuments(filter);
 
         const phieuMuons = await PhieuMuonVatLieu.find(filter)
-            .select(
-                "soPhieu ngayTao loai nhanVien doiTac trangThaiNhan trangThaiTra ghiChu danhSachVatLieu"
-            )
+            .select("soPhieu ngayTao loai nhanVien doiTac trangThaiNhan trangThaiTra ghiChu danhSachVatLieu")
             .populate("danhSachVatLieu.vatLieu", "tenVatLieu donViTinh")
             .sort({ ngayTao: -1 })
-        // .skip(skip)
-        // .limit(limit);
+            .skip(skip)
+            .limit(limit);
 
-        // res.status(200).json({ success: true, data: phieuMuons, total, page, limit });
-        res.status(200).json({ success: true, data: phieuMuons, total });
+        res.status(200).json({ success: true, data: phieuMuons, total, page, limit });
     } catch (error) {
         res.status(500).json({
             success: false,
