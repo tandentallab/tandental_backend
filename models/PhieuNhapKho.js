@@ -55,6 +55,10 @@ const phieuNhapKhoSchema = new mongoose.Schema({
         default: Date.now,
         required: true
     },
+    VAT: {
+        type: Boolean,
+        default: false
+    },
     ngayNhan: {
         type: Date
     },

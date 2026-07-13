@@ -21,12 +21,24 @@ exports.getAll = async (req, res) => {
             const toanVals = values.filter((v) =>
                 ["Chưa thanh toán", "Đã thanh toán"].includes(v)
             );
+            const vatVals = values.filter((v) => ["Có VAT", "Không VAT"].includes(v));
+
             if (nhapVals.length)
                 filter.trangThaiNhap = nhapVals.length === 1 ? nhapVals[0] : { $in: nhapVals };
             if (toanVals.length)
                 filter.trangThaiThanhToan =
                     toanVals.length === 1 ? toanVals[0] : { $in: toanVals };
+            if (vatVals.length === 1) {
+                filter.VAT = vatVals[0] === "Có VAT";
+            }
+            // nếu chọn cả 2 (Có VAT + Không VAT) thì coi như không lọc, giống cách nhapVals/toanVals xử lý khi chọn hết
         }
+
+        // hỗ trợ gọi trực tiếp qua query riêng, ví dụ ?VAT=true
+        if (req.query.VAT !== undefined && filter.VAT === undefined) {
+            filter.VAT = req.query.VAT === "true";
+        }
+
         if (req.query.trangThaiNhap) {
             const values = req.query.trangThaiNhap.split(",").filter(Boolean);
             filter.trangThaiNhap = values.length === 1 ? values[0] : { $in: values };
@@ -64,7 +76,7 @@ exports.getAll = async (req, res) => {
 
         const phieuNhapKhos = await PhieuNhapKho.find(filter)
             .select(
-                "ngayTao soPhieu trangThaiNhap trangThaiThanhToan nguoiTao ghiChu nhaCungCap danhSachVatLieu ngayNhan"
+                "ngayTao soPhieu trangThaiNhap trangThaiThanhToan nguoiTao ghiChu nhaCungCap danhSachVatLieu ngayNhan VAT"
             )
             .populate("nhaCungCap", "ten")
             .populate("danhSachVatLieu.vatLieu", "tenVatLieu donViTinh")
@@ -138,7 +150,7 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
     try {
         const { id } = req.params;
-        const { trangThaiNhap, trangThaiThanhToan, nhaCungCap, ghiChu, danhSachVatLieu, currentRole } =
+        const { trangThaiNhap, trangThaiThanhToan, nhaCungCap, ghiChu, danhSachVatLieu, currentRole, VAT } =
             req.body;
 
         const phieu = await PhieuNhapKho.findById(id);
@@ -148,7 +160,6 @@ exports.update = async (req, res) => {
                 .json({ success: false, message: "Phiếu nhập kho không tồn tại" });
         }
 
-        // Không cho sửa nội dung phiếu đã nhận
         if (
             phieu.trangThaiNhap === "Đã nhận" &&
             (danhSachVatLieu !== undefined || nhaCungCap !== undefined)
@@ -161,7 +172,6 @@ exports.update = async (req, res) => {
             }
         }
 
-        // Chuyển sang "Đã nhận" → cộng tồn kho + ghi ngày nhận
         if (trangThaiNhap === "Đã nhận" && phieu.trangThaiNhap === "Chưa nhận") {
             const list = danhSachVatLieu || phieu.danhSachVatLieu;
             const bulkOps = list.map((item) => ({
@@ -179,9 +189,21 @@ exports.update = async (req, res) => {
         if (ghiChu !== undefined) phieu.ghiChu = ghiChu;
         if (danhSachVatLieu !== undefined) phieu.danhSachVatLieu = danhSachVatLieu;
         if (nhaCungCap !== undefined) phieu.nhaCungCap = nhaCungCap || null;
+        if (VAT !== undefined) phieu.VAT = VAT;
 
-        const updated = await phieu.save();
-        res.status(200).json({ success: true, data: updated });
+        await phieu.save();
+
+        // Populate lại + tính tongTien giống getAll, để FE merge không bị mất dữ liệu
+        const populated = await PhieuNhapKho.findById(phieu._id)
+            .populate("nhaCungCap", "ten")
+            .populate("danhSachVatLieu.vatLieu", "tenVatLieu donViTinh");
+
+        const tongTien = populated.danhSachVatLieu.reduce(
+            (sum, item) => sum + (item.thanhTien || 0),
+            0
+        );
+
+        res.status(200).json({ success: true, data: { ...populated.toObject(), tongTien } });
     } catch (error) {
         res.status(500).json({
             success: false,
