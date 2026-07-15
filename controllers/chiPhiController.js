@@ -1,266 +1,329 @@
-const ChiPhi = require('../models/ChiPhi'); // Đường dẫn có thể thay đổi tùy cấu trúc thư mục của bạn
-const BangLuong = require('../models/BangLuong'); // Import model Bảng Lương
-const PhieuNhapKho = require("../models/PhieuNhapKho");
-const dayjs = require('dayjs');
-const utc = require('dayjs/plugin/utc');
-const timezone = require('dayjs/plugin/timezone');
+const ChiPhi = require('../models/ChiPhi'); //[cite: 2]
+const BangLuong = require('../models/BangLuong'); //[cite: 2]
+const PhieuNhapKho = require("../models/PhieuNhapKho"); //[cite: 2]
+const dayjs = require('dayjs'); //[cite: 2]
+const utc = require('dayjs/plugin/utc'); //[cite: 2]
+const timezone = require('dayjs/plugin/timezone'); //[cite: 2]
 
-dayjs.extend(utc);
-dayjs.extend(timezone);
-dayjs.tz.setDefault("Asia/Ho_Chi_Minh");
+dayjs.extend(utc); //[cite: 2]
+dayjs.extend(timezone); //[cite: 2]
+dayjs.tz.setDefault("Asia/Ho_Chi_Minh"); //[cite: 2]
 
-// 1. Tạo chi phí mới
+// ================= 1. API QUỸ CHI PHÍ (TÍNH TOÁN ĐỘNG) =================
+
+// Thao tác nộp tiền vào quỹ
+exports.napQuy = async (req, res) => {
+    try {
+        const { soTien } = req.body;
+        if (!soTien || soTien <= 0) {
+            return res.status(400).json({ success: false, message: 'Số tiền nạp phải lớn hơn 0' });
+        }
+
+        // Tạo một bản ghi ChiPhi đặc biệt với loaiChiPhi là "Nạp quỹ"
+        const giaoDichNap = new ChiPhi({
+            tenChiPhi: "Nạp tiền quỹ chi phí",
+            loaiChiPhi: "Nạp quỹ",
+            gia: Number(soTien),
+            ghiChu: "Chủ nộp tiền vào quỹ"
+        });
+
+        await giaoDichNap.save();
+
+        // Tính lại số dư hiện tại sau khi nạp để trả về ngay cho FE
+        const thongKeQuy = await layThongTinQuyInternal();
+
+        res.status(200).json({
+            success: true,
+            message: 'Nạp quỹ thành công',
+            data: thongKeQuy
+        });
+    } catch (error) {
+        console.error('Lỗi nạp quỹ:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi nạp quỹ', error: error.message });
+    }
+};
+
+// Lấy thông tin số dư quỹ và lần nạp cuối cùng
+exports.layThongTinQuy = async (req, res) => {
+    try {
+        const thongKeQuy = await layThongTinQuyInternal();
+        res.status(200).json({
+            success: true,
+            data: thongKeQuy
+        });
+    } catch (error) {
+        console.error('Lỗi lấy thông tin quỹ:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi lấy thông tin quỹ', error: error.message });
+    }
+};
+
+// Hàm helper nội bộ để tính toán số dư quỹ và tìm lần nạp cuối
+async function layThongTinQuyInternal() {
+    // 1. Tìm giao dịch "Nạp quỹ" ĐẦU TIÊN để làm mốc thời gian bắt đầu
+    // sort({ ngayTao: 1 }) để lấy record cũ nhất
+    const lanNapDauTien = await ChiPhi.findOne({ loaiChiPhi: "Nạp quỹ" }).sort({ ngayTao: 1 });
+
+    let tongNap = 0;
+    let tongChi = 0;
+    let lanNapCuoi = null;
+
+    // Nếu đã từng nạp quỹ ít nhất 1 lần thì mới bắt đầu tính toán
+    if (lanNapDauTien) {
+        const mocThoiGian = lanNapDauTien.ngayTao;
+
+        // Tính tổng số tiền ĐÃ NẠP vào quỹ
+        const tongNapResult = await ChiPhi.aggregate([
+            { $match: { loaiChiPhi: "Nạp quỹ" } },
+            { $group: { _id: null, tong: { $sum: "$gia" } } }
+        ]);
+        tongNap = tongNapResult.length > 0 ? tongNapResult[0].tong : 0;
+
+        // Tính tổng số tiền ĐÃ CHI (CHỈ TÍNH TỪ LÚC NẠP QUỸ LẦN ĐẦU TIÊN)
+        const tongChiResult = await ChiPhi.aggregate([
+            {
+                $match: {
+                    loaiChiPhi: { $ne: "Nạp quỹ" },
+                    ngayTao: { $gte: mocThoiGian } // <-- CHÌA KHÓA: Chỉ lấy chi phí sinh ra sau hoặc bằng mốc này
+                }
+            },
+            { $group: { _id: null, tong: { $sum: "$gia" } } }
+        ]);
+        tongChi = tongChiResult.length > 0 ? tongChiResult[0].tong : 0;
+
+        // Tìm giao dịch nạp cuối cùng
+        lanNapCuoi = await ChiPhi.findOne({ loaiChiPhi: "Nạp quỹ" }).sort({ ngayTao: -1 });
+    }
+
+    // Tồn quỹ thực tế
+    const tonQuy = tongNap - tongChi;
+
+    return {
+        soDu: tonQuy,             // Trả về số dư thực tế
+        tongNap: tongNap,         // Trả về tổng đã nạp
+        lanNapCuoi: lanNapCuoi ? lanNapCuoi.ngayTao : null,
+        soTienNapCuoi: lanNapCuoi ? lanNapCuoi.gia : 0,
+        idNapCuoi: lanNapCuoi ? lanNapCuoi._id : null
+    };
+}
+
+
+// ================= 2. CÁC API CHI PHÍ CŨ (KHÔNG ĐỔI HOẶC CHỈ CHỈNH SỬA NHỎ) =================
+
+// Tạo chi phí mới
 exports.taoChiPhi = async (req, res) => {
     try {
-        const { tenChiPhi, loaiChiPhi, gia, ghiChu } = req.body;
+        const { tenChiPhi, loaiChiPhi, gia, ghiChu } = req.body; //[cite: 2]
 
-        // Kiểm tra đầu vào cơ bản
-        if (!tenChiPhi || !loaiChiPhi || gia === undefined) {
+        if (!tenChiPhi || !loaiChiPhi || gia === undefined) { //[cite: 2]
             return res.status(400).json({
                 success: false,
-                message: 'Vui lòng điền đầy đủ Tên, Loại chi phí và Giá!'
+                message: 'Vui lòng điền đầy đủ Tên, Loại chi phí và Giá!' //[cite: 2]
             });
         }
 
-        const chiPhiMoi = new ChiPhi({
-            tenChiPhi,
-            loaiChiPhi,
-            gia,
-            ghiChu
-        });
+        const chiPhiMoi = new ChiPhi({ //[cite: 2]
+            tenChiPhi, //[cite: 2]
+            loaiChiPhi, //[cite: 2]
+            gia, //[cite: 2]
+            ghiChu //[cite: 2]
+        }); //[cite: 2]
 
-        const daLuu = await chiPhiMoi.save();
+        const daLuu = await chiPhiMoi.save(); //[cite: 2]
 
         res.status(201).json({
             success: true,
-            message: 'Tạo chi phí thành công',
-            data: daLuu
+            message: 'Tạo chi phí thành công', //[cite: 2]
+            data: daLuu //[cite: 2]
         });
 
     } catch (error) {
-        console.error('Lỗi khi tạo chi phí:', error);
+        console.error('Lỗi khi tạo chi phí:', error); //[cite: 2]
         res.status(500).json({
             success: false,
-            message: 'Lỗi server khi tạo chi phí',
-            error: error.message
+            message: 'Lỗi server khi tạo chi phí', //[cite: 2]
+            error: error.message //[cite: 2]
         });
     }
 };
 
-// 2. Chỉnh sửa/Cập nhật chi phí
+// Chỉnh sửa/Cập nhật chi phí
 exports.updateChiPhi = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { tenChiPhi, loaiChiPhi, gia, ghiChu } = req.body;
+        const { id } = req.params; //[cite: 2]
+        const { tenChiPhi, loaiChiPhi, gia, ghiChu } = req.body; //[cite: 2]
 
         const chiPhiCapNhat = await ChiPhi.findByIdAndUpdate(
             id,
             { tenChiPhi, loaiChiPhi, gia, ghiChu },
-            { new: true, runValidators: true } // Trả về document mới sau khi update
+            { new: true, runValidators: true } //[cite: 2]
         );
 
         if (!chiPhiCapNhat) {
             return res.status(404).json({
                 success: false,
-                message: 'Không tìm thấy chi phí cần chỉnh sửa'
+                message: 'Không tìm thấy chi phí cần chỉnh sửa' //[cite: 2]
             });
         }
 
         res.status(200).json({
             success: true,
-            message: 'Cập nhật chi phí thành công',
-            data: chiPhiCapNhat
+            message: 'Cập nhật chi phí thành công', //[cite: 2]
+            data: chiPhiCapNhat //[cite: 2]
         });
 
     } catch (error) {
-        console.error('Lỗi khi cập nhật chi phí:', error);
+        console.error('Lỗi khi cập nhật chi phí:', error); //[cite: 2]
         res.status(500).json({
             success: false,
-            message: 'Lỗi server khi cập nhật chi phí',
-            error: error.message
+            message: 'Lỗi server khi cập nhật chi phí', //[cite: 2]
+            error: error.message //[cite: 2]
         });
     }
 };
 
-// 3. Xóa chi phí (Option: Dành cho trường hợp nhập sai)
+// Xóa chi phí
 exports.xoaChiPhi = async (req, res) => {
     try {
-        const { id } = req.params;
-        const chiPhiDaXoa = await ChiPhi.findByIdAndDelete(id);
+        const { id } = req.params; //[cite: 2]
+        const chiPhiDaXoa = await ChiPhi.findByIdAndDelete(id); //[cite: 2]
 
         if (!chiPhiDaXoa) {
             return res.status(404).json({
                 success: false,
-                message: 'Không tìm thấy chi phí cần xóa'
+                message: 'Không tìm thấy chi phí cần xóa' //[cite: 2]
             });
         }
 
         res.status(200).json({
             success: true,
-            message: 'Đã xóa chi phí thành công'
+            message: 'Đã xóa chi phí thành công' //[cite: 2]
         });
 
     } catch (error) {
-        console.error('Lỗi khi xóa chi phí:', error);
+        console.error('Lỗi khi xóa chi phí:', error); //[cite: 2]
         res.status(500).json({
             success: false,
-            message: 'Lỗi server khi xóa chi phí',
-            error: error.message
+            message: 'Lỗi server khi xóa chi phí', //[cite: 2]
+            error: error.message //[cite: 2]
         });
     }
 };
 
+// Lấy danh sách chi phí (Lưu ý: Loại bỏ phần "Nạp quỹ" ra khỏi bảng chi phí thông thường để tránh lẫn lộn)
 exports.layDanhSachChiPhi = async (req, res) => {
     try {
-        // 1. Lấy tháng/năm từ query, mặc định là tháng hiện tại theo giờ VN
-        const now = dayjs().tz("Asia/Ho_Chi_Minh");
-        const thang = req.query.thang ? parseInt(req.query.thang) : now.month() + 1;
-        const nam = req.query.nam ? parseInt(req.query.nam) : now.year();
+        const now = dayjs().tz("Asia/Ho_Chi_Minh"); //[cite: 2]
+        const thang = req.query.thang ? parseInt(req.query.thang) : now.month() + 1; //[cite: 2]
+        const nam = req.query.nam ? parseInt(req.query.nam) : now.year(); //[cite: 2]
 
-        // 2. Tính ngày bắt đầu và kết thúc của tháng để lọc trong bảng ChiPhi
-        const startDate = dayjs.tz(`${nam}-${thang}-01`, "Asia/Ho_Chi_Minh").startOf("month").toDate();
-        const endDate = dayjs.tz(`${nam}-${thang}-01`, "Asia/Ho_Chi_Minh").endOf("month").toDate();
+        const startDate = dayjs.tz(`${nam}-${thang}-01`, "Asia/Ho_Chi_Minh").startOf("month").toDate(); //[cite: 2]
+        const endDate = dayjs.tz(`${nam}-${thang}-01`, "Asia/Ho_Chi_Minh").endOf("month").toDate(); //[cite: 2]
 
-        // Lấy các chi phí THỦ CÔNG tạo trong tháng
+        // Chỉ lấy các chi phí THỦ CÔNG tạo trong tháng và KHÔNG PHẢI LÀ giao dịch "Nạp quỹ"
         const chiPhiThuCong = await ChiPhi.find({
-            ngayTao: { $gte: startDate, $lte: endDate }
-        }).sort({ ngayTao: -1 }).lean();
+            loaiChiPhi: { $ne: "Nạp quỹ" }, // Thêm lọc loại trừ Nạp quỹ ở đây
+            ngayTao: { $gte: startDate, $lte: endDate } //[cite: 2]
+        }).sort({ ngayTao: -1 }).lean(); //[cite: 2]
 
-        // 3. Tổng hợp LƯƠNG NHÂN VIÊN từ bảng BangLuong
-        // CẬP NHẬT: Thêm populate để lấy dữ liệu họ tên nhân viên (nếu reference)
-        const bangLuongList = await BangLuong.find({ thang, nam }).populate('nhanVien').lean();
-
+        // Tổng hợp LƯƠNG NHÂN VIÊN từ bảng BangLuong
+        const bangLuongList = await BangLuong.find({ thang, nam }).populate('nhanVien').lean(); //[cite: 2]
         const tongLuongThucNhan = bangLuongList.reduce(
-            (sum, item) => sum + (item.thucNhan || 0) + (item.ungTruoc || 0), 0
+            (sum, item) => sum + (item.thucNhan || 0) + (item.ungTruoc || 0), 0 //[cite: 2]
         );
 
         const chiPhiLuong = {
             _id: "auto_luong_nhan_vien",
-            tenChiPhi: `Tổng lương nhân viên tháng ${thang}/${nam}`,
-            loaiChiPhi: "Lương NV",
-            gia: tongLuongThucNhan,
-            ghiChu: "Lấy từ Bảng lương",
-            ngayTao: startDate,
-            isAuto: true,
-            chiTiet: bangLuongList // <-- CẬP NHẬT: Đính kèm danh sách chi tiết
+            tenChiPhi: `Tổng lương nhân viên tháng ${thang}/${nam}`, //[cite: 2]
+            loaiChiPhi: "Lương NV", //[cite: 2]
+            gia: tongLuongThucNhan, //[cite: 2]
+            ghiChu: "Lấy từ Bảng lương", //[cite: 2]
+            ngayTao: startDate, //[cite: 2]
+            isAuto: true, //[cite: 2]
+            chiTiet: bangLuongList //[cite: 2]
         };
 
-        // 4. Tính CHI PHÍ VẬT LIỆU TỰ ĐỘNG TỪ KHO
+        // Tính CHI PHÍ VẬT LIỆU TỰ ĐỘNG TỪ KHO
         const thongKeVatLieu = await PhieuNhapKho.aggregate([
-            { $match: { trangThai: "Đã nhận", ngayTao: { $gte: startDate, $lte: endDate } } },
-            { $unwind: "$danhSachVatLieu" },
-            { $group: { _id: null, tongChiPhi: { $sum: "$danhSachVatLieu.thanhTien" } } }
+            { $match: { trangThai: "Đã nhận", ngayTao: { $gte: startDate, $lte: endDate } } }, //[cite: 2]
+            { $unwind: "$danhSachVatLieu" }, //[cite: 2]
+            { $group: { _id: null, tongChiPhi: { $sum: "$danhSachVatLieu.thanhTien" } } } //[cite: 2]
         ]);
 
-        const tongGiaVatLieu = thongKeVatLieu.length > 0 ? thongKeVatLieu[0].tongChiPhi : 0;
+        const tongGiaVatLieu = thongKeVatLieu.length > 0 ? thongKeVatLieu[0].tongChiPhi : 0; //[cite: 2]
 
         const chiPhiVatLieu = {
             _id: "auto_chi_phi_vat_lieu",
-            tenChiPhi: `Chi phí vật liệu tháng ${thang}/${nam}`,
-            loaiChiPhi: "Vật tư",
-            gia: tongGiaVatLieu,
-            ghiChu: "Lấy từ Phiếu nhập kho",
-            ngayTao: startDate,
-            isAuto: true
+            tenChiPhi: `Chi phí vật liệu tháng ${thang}/${nam}`, //[cite: 2]
+            loaiChiPhi: "Vật tư", //[cite: 2]
+            gia: tongGiaVatLieu, //[cite: 2]
+            ghiChu: "Lấy từ Phiếu nhập kho", //[cite: 2]
+            ngayTao: startDate, //[cite: 2]
+            isAuto: true //[cite: 2]
         };
 
-        // 5. Gộp danh sách và làm tròn tất cả giá về đơn vị nghìn
         const danhSachChiPhi = [
-            chiPhiVatLieu,
-            chiPhiLuong,
-            ...chiPhiThuCong
+            chiPhiVatLieu, //[cite: 2]
+            chiPhiLuong, //[cite: 2]
+            ...chiPhiThuCong //[cite: 2]
         ].map(item => ({
             ...item,
-            gia: Math.round((item.gia || 0) / 1000) * 1000
+            gia: Math.round((item.gia || 0) / 1000) * 1000 //[cite: 2]
         }));
 
-        res.status(200).json({ success: true, data: danhSachChiPhi });
+        res.status(200).json({ success: true, data: danhSachChiPhi }); //[cite: 2]
 
     } catch (error) {
-        console.error("Lỗi khi lấy danh sách chi phí:", error);
-        res.status(500).json({ success: false, message: "Lỗi server khi lấy danh sách chi phí", error: error.message });
+        console.error("Lỗi khi lấy danh sách chi phí:", error); //[cite: 2]
+        res.status(500).json({ success: false, message: "Lỗi server khi lấy danh sách chi phí", error: error.message }); //[cite: 2]
     }
 };
 
+// Thống kê chi phí nhập theo tháng
 exports.thongKeChiPhiNhapTheoThang = async (req, res) => {
     try {
-        const { tuNgay, denNgay } = req.query;
+        const { tuNgay, denNgay } = req.query; //[cite: 2]
+        const matchStage = { trangThai: "Đã nhận" }; //[cite: 2]
 
-        // 1. Tạo bộ lọc cơ bản: Chỉ tính các phiếu "Đã nhận"
-        const matchStage = {
-            trangThai: "Đã nhận"
-        };
-
-        // 2. Lọc theo khoảng thời gian sử dụng dayjs timezone
         if (tuNgay || denNgay) {
-            matchStage.ngayTao = {};
-
-            if (tuNgay) {
-                // Đưa về 00:00:00.000 của ngày tuNgay theo giờ VN, sau đó convert sang chuẩn Date để query DB
-                matchStage.ngayTao.$gte = dayjs.tz(tuNgay).startOf('day').toDate();
-            }
-            if (denNgay) {
-                // Đưa về 23:59:59.999 của ngày denNgay theo giờ VN
-                matchStage.ngayTao.$lte = dayjs.tz(denNgay).endOf('day').toDate();
-            }
+            matchStage.ngayTao = {}; //[cite: 2]
+            if (tuNgay) matchStage.ngayTao.$gte = dayjs.tz(tuNgay).startOf('day').toDate(); //[cite: 2]
+            if (denNgay) matchStage.ngayTao.$lte = dayjs.tz(denNgay).endOf('day').toDate(); //[cite: 2]
         }
 
-        // 3. Thực thi Aggregation Pipeline
         const result = await PhieuNhapKho.aggregate([
-            {
-                $match: matchStage
-            },
-            {
-                $unwind: "$danhSachVatLieu" // Tách mảng danhSachVatLieu để dễ tính tổng
-            },
-            {
-                $group: {
-                    _id: null,
-                    tongChiPhi: { $sum: "$danhSachVatLieu.thanhTien" } // Cộng dồn trường thanhTien
-                }
-            }
+            { $match: matchStage }, //[cite: 2]
+            { $unwind: "$danhSachVatLieu" }, //[cite: 2]
+            { $group: { _id: null, tongChiPhi: { $sum: "$danhSachVatLieu.thanhTien" } } } //[cite: 2]
         ]);
 
-        const tongChiPhi = result.length > 0 ? result[0].tongChiPhi : 0;
+        const tongChiPhi = result.length > 0 ? result[0].tongChiPhi : 0; //[cite: 2]
 
         res.status(200).json({
             success: true,
-            data: {
-                tuNgay,
-                denNgay,
-                tongChiPhi
-            }
+            data: { tuNgay, denNgay, tongChiPhi } //[cite: 2]
         });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: "Lỗi khi thống kê chi phí vật liệu",
-            error: error.message,
-        });
+        res.status(500).json({ success: false, message: "Lỗi khi thống kê chi phí vật liệu", error: error.message }); //[cite: 2]
     }
 };
-// Lấy danh sách loại chi phí động bằng distinct
+
+// Lấy danh sách loại chi phí động (Loại bỏ "Nạp quỹ" để nhân viên không chọn nhầm khi tạo tay)
 exports.layDanhSachLoaiChiPhi = async (req, res) => {
     try {
-        // Quét toàn bộ bảng ChiPhi, lấy ra các giá trị loaiChiPhi không trùng lặp
-        const danhSachTuDB = await ChiPhi.distinct("loaiChiPhi");
+        const danhSachTuDB = await ChiPhi.distinct("loaiChiPhi", { loaiChiPhi: { $ne: "Nạp quỹ" } }); // Loại bỏ "Nạp quỹ"
 
-        // Các loại mặc định
-        const loaiMacDinh = ["Điện nước", "Vật tư", "Sửa chữa", "Khác"];
+        const loaiMacDinh = ["Điện nước", "Vật tư", "Sửa chữa", "Khác"]; //[cite: 2]
+        let danhSachCuoiCung = [...new Set([...loaiMacDinh, ...danhSachTuDB])]; //[cite: 2]
 
-        // Gộp mảng và dùng Set để loại bỏ trùng lặp
-        let danhSachCuoiCung = [...new Set([...loaiMacDinh, ...danhSachTuDB])];
-
-        // Sắp xếp: A-Z, nhưng "Khác" luôn nằm cuối cùng
         danhSachCuoiCung.sort((a, b) => {
-            if (a === "Khác") return 1; // a là "Khác" thì đẩy a xuống dưới b
-            if (b === "Khác") return -1; // b là "Khác" thì đẩy b xuống dưới a
-            return a.localeCompare(b); // Còn lại so sánh alphabet bình thường
+            if (a === "Khác") return 1; //[cite: 2]
+            if (b === "Khác") return -1; //[cite: 2]
+            return a.localeCompare(b); //[cite: 2]
         });
 
-        res.status(200).json({ success: true, data: danhSachCuoiCung });
+        res.status(200).json({ success: true, data: danhSachCuoiCung }); //[cite: 2]
     } catch (error) {
-        console.error('Lỗi khi lấy loại chi phí:', error);
-        res.status(500).json({ success: false, message: 'Lỗi server', error: error.message });
+        console.error('Lỗi khi lấy loại chi phí:', error); //[cite: 2]
+        res.status(500).json({ success: false, message: 'Lỗi server', error: error.message }); //[cite: 2]
     }
 };

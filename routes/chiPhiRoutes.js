@@ -1,21 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const chiPhiController = require('../controllers/chiPhiController'); // Import đúng tên controller của bạn
-const { verifyToken, checkPermission } = require("../middleware/authMiddleware");
+const chiPhiController = require('../controllers/chiPhiController'); //[cite: 3]
+const { verifyToken, checkPermission } = require("../middleware/authMiddleware"); //[cite: 3]
 
-// 1. Route tạo chi phí mới
-router.post('/', verifyToken, checkPermission, chiPhiController.taoChiPhi);
+// --- ROUTE CHO QUỸ CHI PHÍ (Nằm trong cùng controller và model ChiPhi) ---
+router.post('/quy/nap', verifyToken, checkPermission, chiPhiController.napQuy);
+router.get('/quy', verifyToken, checkPermission, chiPhiController.layThongTinQuy);
 
-// 2. Route lấy danh sách chi phí
-router.get('/', verifyToken, checkPermission, chiPhiController.layDanhSachChiPhi);
-router.get('/loai', verifyToken, checkPermission, chiPhiController.layDanhSachLoaiChiPhi);
+// --- ROUTE CŨ GIỮ NGUYÊN ---
+router.post('/', verifyToken, checkPermission, chiPhiController.taoChiPhi); //[cite: 3]
+router.get('/', verifyToken, checkPermission, chiPhiController.layDanhSachChiPhi); //[cite: 3]
+router.get('/loai', verifyToken, checkPermission, chiPhiController.layDanhSachLoaiChiPhi); //[cite: 3]
+router.delete('/:id', verifyToken, checkPermission, chiPhiController.xoaChiPhi); //[cite: 3]
+router.put('/:id', verifyToken, checkPermission, chiPhiController.updateChiPhi); //[cite: 3]
+router.get('/thong-ke-vat-lieu', verifyToken, checkPermission, chiPhiController.thongKeChiPhiNhapTheoThang); //[cite: 3]
 
-// 3. Route xóa chi phí theo ID
-router.delete('/:id', verifyToken, checkPermission, chiPhiController.xoaChiPhi);
-
-// 4. Route cập nhật chi phí theo ID (Mới thêm)
-router.put('/:id', verifyToken, checkPermission, chiPhiController.updateChiPhi);
-
-router.get('/thong-ke-vat-lieu', verifyToken, checkPermission, chiPhiController.thongKeChiPhiNhapTheoThang);
-
-module.exports = router;
+module.exports = router; //[cite: 3]
