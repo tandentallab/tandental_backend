@@ -61,3 +61,23 @@ exports.updateCompany = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+// 📸 Upload logo công ty
+exports.uploadLogo = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "Vui lòng chọn file ảnh" });
+    }
+
+    // uploadCCCD lưu file vào public/uploads/cccd/
+    const relativeUrl = `/api/uploads/cccd/${req.file.filename}`;
+
+    res.json({
+      success: true,
+      message: "Upload logo thành công",
+      url: relativeUrl
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
