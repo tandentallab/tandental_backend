@@ -6,6 +6,8 @@ const { verifyToken, checkPermission } = require("../middleware/authMiddleware")
 // --- ROUTE CHO QUỸ CHI PHÍ (Nằm trong cùng controller và model ChiPhi) ---
 router.post('/quy/nap', verifyToken, checkPermission, chiPhiController.napQuy);
 router.get('/quy', verifyToken, checkPermission, chiPhiController.layThongTinQuy);
+router.get('/quy/lich-su', verifyToken, checkPermission, chiPhiController.lichSuNapQuy);
+router.get('/quy/ton-quy-ngay', verifyToken, checkPermission, chiPhiController.tinhTonQuyTheoNgay);
 
 // --- ROUTE CŨ GIỮ NGUYÊN ---
 router.post('/', verifyToken, checkPermission, chiPhiController.taoChiPhi); //[cite: 3]

@@ -24,7 +24,7 @@ exports.napQuy = async (req, res) => {
             tenChiPhi: "Nạp tiền quỹ chi phí",
             loaiChiPhi: "Nạp quỹ",
             gia: Number(soTien),
-            ghiChu: "Chủ nộp tiền vào quỹ"
+
         });
 
         await giaoDichNap.save();
@@ -325,5 +325,98 @@ exports.layDanhSachLoaiChiPhi = async (req, res) => {
     } catch (error) {
         console.error('Lỗi khi lấy loại chi phí:', error); //[cite: 2]
         res.status(500).json({ success: false, message: 'Lỗi server', error: error.message }); //[cite: 2]
+    }
+};
+
+// =========================================================================
+// MỚI: 1. API Lấy lịch sử nạp quỹ (Sắp xếp mới nhất lên đầu)
+// =========================================================================
+exports.lichSuNapQuy = async (req, res) => {
+    try {
+        const lichSu = await ChiPhi.find({ loaiChiPhi: "Nạp quỹ" })
+            .sort({ ngayTao: -1 })
+            .lean();
+
+        res.status(200).json({
+            success: true,
+            data: lichSu
+        });
+    } catch (error) {
+        console.error('Lỗi lấy lịch sử nạp quỹ:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi lấy lịch sử', error: error.message });
+    }
+};
+
+// =========================================================================
+// MỚI: 2. API Tính toán Tồn quỹ theo một ngày cụ thể (Dành cho Phiếu In)
+// =========================================================================
+exports.tinhTonQuyTheoNgay = async (req, res) => {
+    try {
+        const { ngay } = req.query; // Format mong đợi: YYYY-MM-DD
+
+        if (!ngay) {
+            return res.status(400).json({ success: false, message: "Vui lòng truyền tham số ngày (YYYY-MM-DD)." });
+        }
+
+        const targetDate = dayjs.tz(ngay, "Asia/Ho_Chi_Minh");
+        const startOfDay = targetDate.startOf('day').toDate();
+        const endOfDay = targetDate.endOf('day').toDate();
+
+        // 1. Tìm lần nạp đầu tiên làm mốc
+        const lanNapDauTien = await ChiPhi.findOne({ loaiChiPhi: "Nạp quỹ" }).sort({ ngayTao: 1 });
+
+        let tonDauNgay = 0;
+        let phatSinhNapTrongNgay = 0;
+        let phatSinhChiTrongNgay = 0;
+
+        if (lanNapDauTien && startOfDay >= lanNapDauTien.ngayTao) {
+            // Tổng nạp TRƯỚC 00:00:00 ngày đang xét
+            const tongNapTruoc = await ChiPhi.aggregate([
+                { $match: { loaiChiPhi: "Nạp quỹ", ngayTao: { $lt: startOfDay } } },
+                { $group: { _id: null, tong: { $sum: "$gia" } } }
+            ]);
+            const napTruoc = tongNapTruoc.length > 0 ? tongNapTruoc[0].tong : 0;
+
+            // Tổng chi TRƯỚC 00:00:00 ngày đang xét (chỉ tính từ lúc bắt đầu có quỹ)
+            const tongChiTruoc = await ChiPhi.aggregate([
+                { $match: { loaiChiPhi: { $ne: "Nạp quỹ" }, ngayTao: { $gte: lanNapDauTien.ngayTao, $lt: startOfDay } } },
+                { $group: { _id: null, tong: { $sum: "$gia" } } }
+            ]);
+            const chiTruoc = tongChiTruoc.length > 0 ? tongChiTruoc[0].tong : 0;
+
+            tonDauNgay = napTruoc - chiTruoc;
+        }
+
+        // 2. Tính Phát sinh NẠP trong chính ngày đó (từ 00:00:00 đến 23:59:59)
+        const tongNapTrongNgay = await ChiPhi.aggregate([
+            { $match: { loaiChiPhi: "Nạp quỹ", ngayTao: { $gte: startOfDay, $lte: endOfDay } } },
+            { $group: { _id: null, tong: { $sum: "$gia" } } }
+        ]);
+        phatSinhNapTrongNgay = tongNapTrongNgay.length > 0 ? tongNapTrongNgay[0].tong : 0;
+
+        // 3. Tính Phát sinh CHI trong chính ngày đó (từ 00:00:00 đến 23:59:59)
+        const tongChiTrongNgay = await ChiPhi.aggregate([
+            { $match: { loaiChiPhi: { $ne: "Nạp quỹ" }, ngayTao: { $gte: startOfDay, $lte: endOfDay } } },
+            { $group: { _id: null, tong: { $sum: "$gia" } } }
+        ]);
+        phatSinhChiTrongNgay = tongChiTrongNgay.length > 0 ? tongChiTrongNgay[0].tong : 0;
+
+        // 4. Tính Tồn cuối ngày = Tồn đầu + Nạp thêm trong ngày - Chi trong ngày
+        const tonCuoiNgay = tonDauNgay + phatSinhNapTrongNgay - phatSinhChiTrongNgay;
+
+        res.status(200).json({
+            success: true,
+            data: {
+                ngay: targetDate.format('DD/MM/YYYY'),
+                tonDauNgay,
+                phatSinhNapTrongNgay,
+                phatSinhChiTrongNgay,
+                tonCuoiNgay
+            }
+        });
+
+    } catch (error) {
+        console.error('Lỗi tính tồn quỹ theo ngày:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi tính tồn quỹ theo ngày', error: error.message });
     }
 };
