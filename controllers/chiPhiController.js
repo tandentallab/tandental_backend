@@ -244,7 +244,7 @@ exports.layDanhSachChiPhi = async (req, res) => {
 
         // Tính CHI PHÍ VẬT LIỆU TỰ ĐỘNG TỪ KHO
         const thongKeVatLieu = await PhieuNhapKho.aggregate([
-            { $match: { trangThai: "Đã nhận", ngayTao: { $gte: startDate, $lte: endDate } } }, //[cite: 2]
+            { $match: { trangThaiNhap: "Đã nhận", ngayTao: { $gte: startDate, $lte: endDate } } }, //[cite: 2]
             { $unwind: "$danhSachVatLieu" }, //[cite: 2]
             { $group: { _id: null, tongChiPhi: { $sum: "$danhSachVatLieu.thanhTien" } } } //[cite: 2]
         ]);
@@ -282,7 +282,7 @@ exports.layDanhSachChiPhi = async (req, res) => {
 exports.thongKeChiPhiNhapTheoThang = async (req, res) => {
     try {
         const { tuNgay, denNgay } = req.query; //[cite: 2]
-        const matchStage = { trangThai: "Đã nhận" }; //[cite: 2]
+        const matchStage = { trangThaiNhap: "Đã nhận" }; //[cite: 2]
 
         if (tuNgay || denNgay) {
             matchStage.ngayTao = {}; //[cite: 2]

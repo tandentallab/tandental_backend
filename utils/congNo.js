@@ -28,7 +28,6 @@ const getCongNoTatCaNhaKhoa = async () => {
         {
             $match: {
                 conLai: { $gt: 0 },
-                trangThai: { $ne: "Lưu tạm" }
             }
         },
         {
