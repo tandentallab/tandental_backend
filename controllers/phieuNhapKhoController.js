@@ -52,7 +52,7 @@ exports.getAll = async (req, res) => {
             filter.nguoiTao = { $regex: req.query.nguoiTao, $options: "i" };
         }
 
-        // NCC nay là top-level field
+        // NCC nay là top-level field (chọn từ select, khớp chính xác)
         if (req.query.nhaCungCap) {
             const ncc = await NhaCungCap.findOne({ ten: req.query.nhaCungCap }).select("_id");
             if (ncc) {
@@ -60,6 +60,32 @@ exports.getAll = async (req, res) => {
             } else {
                 return res.status(200).json({ success: true, data: [], total: 0, page, limit });
             }
+        }
+
+        // Lọc theo tên vật liệu — tìm các VatLieu khớp tên rồi lọc phiếu chứa vật liệu đó
+        if (req.query.tenVatLieu) {
+            const vlMatches = await VatLieu.find({
+                tenVatLieu: { $regex: req.query.tenVatLieu, $options: "i" },
+            }).select("_id");
+
+            if (vlMatches.length) {
+                filter["danhSachVatLieu.vatLieu"] = { $in: vlMatches.map((v) => v._id) };
+            } else {
+                return res.status(200).json({ success: true, data: [], total: 0, page, limit });
+            }
+        }
+
+        // Search chung: số phiếu HOẶC tên nhà cung cấp
+        if (req.query.timKiem) {
+            const kw = req.query.timKiem;
+            const nccMatches = await NhaCungCap.find({
+                ten: { $regex: kw, $options: "i" },
+            }).select("_id");
+
+            filter.$or = [
+                { soPhieu: { $regex: kw, $options: "i" } },
+                ...(nccMatches.length ? [{ nhaCungCap: { $in: nccMatches.map((n) => n._id) } }] : []),
+            ];
         }
 
         if (req.query.tuNgay || req.query.denNgay) {

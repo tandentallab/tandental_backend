@@ -32,8 +32,31 @@ exports.getAll = async (req, res) => {
             const values = req.query.trangThai.split(",").filter(Boolean);
             filter.trangThai = values.length === 1 ? values[0] : { $in: values };
         }
-        if (req.query.nhanVien) filter.nhanVien = { $regex: req.query.nhanVien, $options: "i" };
-        if (req.query.boPhan) filter.boPhan = { $regex: req.query.boPhan, $options: "i" };
+        if (req.query.nhanVien) filter.nhanVien = req.query.nhanVien;
+        if (req.query.boPhan) filter.boPhan = req.query.boPhan;
+
+        // Lọc theo tên vật liệu — tìm các VatLieu khớp tên rồi lọc phiếu chứa vật liệu đó
+        if (req.query.tenVatLieu) {
+            const vlMatches = await VatLieu.find({
+                tenVatLieu: { $regex: req.query.tenVatLieu, $options: "i" },
+            }).select("_id");
+
+            if (vlMatches.length) {
+                filter["danhSachVatLieu.vatLieu"] = { $in: vlMatches.map((v) => v._id) };
+            } else {
+                return res.status(200).json({ success: true, data: [], total: 0, page, limit });
+            }
+        }
+
+        // Search chung: số phiếu HOẶC bộ phận HOẶC nhân viên
+        if (req.query.timKiem) {
+            const kw = req.query.timKiem;
+            filter.$or = [
+                { soPhieu: { $regex: kw, $options: "i" } },
+                { boPhan: { $regex: kw, $options: "i" } },
+                { nhanVien: { $regex: kw, $options: "i" } },
+            ];
+        }
 
         if (req.query.tuNgay || req.query.denNgay) {
             filter.ngayTao = {};

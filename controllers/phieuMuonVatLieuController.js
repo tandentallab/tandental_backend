@@ -27,6 +27,40 @@ exports.getAll = async (req, res) => {
         if (req.query.nhanVien) filter.nhanVien = { $regex: req.query.nhanVien, $options: "i" };
         if (req.query.doiTac) filter["doiTac.ten"] = { $regex: req.query.doiTac, $options: "i" };
 
+        if (req.query.soPhieu) {
+            filter.soPhieu = { $regex: req.query.soPhieu, $options: "i" };
+        }
+
+        // Lọc theo tên vật liệu — tìm các VatLieu khớp tên rồi lọc phiếu chứa vật liệu đó
+        if (req.query.vatLieu) {
+            const vlMatches = await VatLieu.find({
+                tenVatLieu: { $regex: req.query.vatLieu, $options: "i" },
+            }).select("_id");
+
+            if (vlMatches.length) {
+                filter["danhSachVatLieu.vatLieu"] = { $in: vlMatches.map((v) => v._id) };
+            } else {
+                return res.status(200).json({ success: true, data: [], total: 0, page, limit });
+            }
+        }
+
+        // Search chung: số phiếu HOẶC đối tác HOẶC nhân viên HOẶC tên vật liệu
+        if (req.query.timKiem) {
+            const kw = req.query.timKiem;
+            const vlMatches = await VatLieu.find({
+                tenVatLieu: { $regex: kw, $options: "i" },
+            }).select("_id");
+
+            filter.$or = [
+                { soPhieu: { $regex: kw, $options: "i" } },
+                { "doiTac.ten": { $regex: kw, $options: "i" } },
+                { nhanVien: { $regex: kw, $options: "i" } },
+                ...(vlMatches.length
+                    ? [{ "danhSachVatLieu.vatLieu": { $in: vlMatches.map((v) => v._id) } }]
+                    : []),
+            ];
+        }
+
         if (req.query.tuNgay || req.query.denNgay) {
             filter.ngayTao = {};
             if (req.query.tuNgay) filter.ngayTao.$gte = new Date(req.query.tuNgay);
