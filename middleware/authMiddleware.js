@@ -60,31 +60,33 @@ exports.authorizeRoles = (...allowedRoles) => {
       const permissions = staff.quyenSuDung?.permissions || [];
       const baseUrl = req.baseUrl || "";
 
-      // Ánh xạ từ api path (req.baseUrl) sang frontend menu path
+      // Ánh xạ từ api path (req.baseUrl) sang danh sách các frontend menu path
       const pathMap = {
-        "/api/nhakhoa": "/nha-khoa",
-        "/api/nguoilienhe": "/nguoi-lien-he",
-        "/api/benhnhan": "/benh-nhan",
-        "/api/sanpham": "/san-pham",
-        "/api/congdoan": "/cong-doan",
-        "/api/donhang": "/don-hang",
-        "/api/hoa-don": "/hoa-don",
-        "/api/phieu-thu": "/phieu-thu",
-        "/api/phieu-bao-hanh": "/phieu-bao-hanh",
-        "/api/mau-the-bao-hanh": "/mau-the-bao-hanh",
-        "/api/nhan-vien": "/nhan-vien",
-        "/api/bang-luong": "/bang-luong",
-        "/api/baocao": "/bao-cao",
-        "/api/quyen-su-dung": "/quyen-su-dung",
-        "/api/cong-ty": "/cong-ty",
-        "/api/nha-cung-cap": "/nha-cung-cap",
-        "/api/ghi-chu": "/ghi-chu",
+        "/api/nhakhoa": ["/nha-khoa"],
+        "/api/nguoilienhe": ["/nguoi-lien-he"],
+        "/api/benhnhan": ["/benh-nhan"],
+        "/api/sanpham": ["/san-pham"],
+        "/api/congdoan": ["/cong-doan"],
+        "/api/donhang": ["/don-hang", "/ke-hoach-giao-hang", "/cho-xuat-hoa-don"],
+        "/api/hoa-don": ["/hoa-don", "/cho-xuat-hoa-don"],
+        "/api/phieu-thu": ["/phieu-thu"],
+        "/api/phieu-bao-hanh": ["/phieu-bao-hanh"],
+        "/api/mau-the-bao-hanh": ["/mau-the-bao-hanh"],
+        "/api/nhan-vien": ["/nhan-vien", "/bang-luong"],
+        "/api/bang-luong": ["/bang-luong"],
+        "/api/baocao": ["/bao-cao", "/bao-cao-doanh-thu", "/bao-cao-khach-hang", "/doanh-so-khach-hang", "/doanh-so-san-pham", "/doanh-so-thoi-gian"],
+        "/api/quyen-su-dung": ["/quyen-su-dung"],
+        "/api/cong-ty": ["/cong-ty"],
+        "/api/nha-cung-cap": ["/nha-cung-cap"],
+        "/api/ghi-chu": ["/ghi-chu"],
+        "/api/kho": ["/kho"],
+        "/api/chi-phi": ["/chi-phi"],
       };
 
-      const mappedMenuPath = pathMap[baseUrl];
+      const mappedPaths = pathMap[baseUrl];
 
       // Nếu tài khoản có quyenSuDung được gán và route thuộc sơ đồ menu động
-      if (staff.quyenSuDung && mappedMenuPath) {
+      if (staff.quyenSuDung && mappedPaths) {
         // Danh sách các catalog/danh mục cần cho phép đọc (GET) để làm dropdown ở các trang khác
         const isCatalogLookup = [
           "/api/nhakhoa",
@@ -94,21 +96,23 @@ exports.authorizeRoles = (...allowedRoles) => {
           "/api/congdoan",
           "/api/nhan-vien",
           "/api/bang-gia",
-          "/api/mau-the-bao-hanh"
+          "/api/mau-the-bao-hanh",
+          "/api/nha-cung-cap"
         ].includes(baseUrl);
 
         if (req.method === "GET" && isCatalogLookup) {
           return next(); // Cho phép đọc danh mục hỗ trợ (dropdown/charts)
         }
 
-        if (permissions.includes(mappedMenuPath)) {
+        const hasAccess = mappedPaths.some((p) => permissions.includes(p));
+        if (hasAccess) {
           return next();
         } else {
           // Bị từ chối quyền truy cập động
           return res.status(403).json({
-            message: `Tài khoản của bạn không có quyền truy cập chức năng này (yêu cầu quyền: ${mappedMenuPath})`,
+            message: `Tài khoản của bạn không có quyền truy cập chức năng này (yêu cầu một trong các quyền: ${mappedPaths.join(", ")})`,
             appRole,
-            requiredPermission: mappedMenuPath,
+            requiredPermissions: mappedPaths,
           });
         }
       }
@@ -122,7 +126,7 @@ exports.authorizeRoles = (...allowedRoles) => {
         message: "Bạn không có quyền truy cập tài nguyên này",
         appRole,
         allowedRoles: Array.from(normalizedAllowedRoles),
-        requiredPermission: mappedMenuPath || baseUrl,
+        requiredPermission: mappedPaths || baseUrl,
       });
     } catch (error) {
       return res.status(500).json({ message: error.message || "Lỗi phân quyền" });
@@ -164,29 +168,31 @@ exports.checkPermission = async (req, res, next) => {
     const baseUrl = req.baseUrl || "";
 
     const pathMap = {
-      "/api/nhakhoa": "/nha-khoa",
-      "/api/nguoilienhe": "/nguoi-lien-he",
-      "/api/benhnhan": "/benh-nhan",
-      "/api/sanpham": "/san-pham",
-      "/api/congdoan": "/cong-doan",
-      "/api/donhang": "/don-hang",
-      "/api/hoa-don": "/hoa-don",
-      "/api/phieu-thu": "/phieu-thu",
-      "/api/phieu-bao-hanh": "/phieu-bao-hanh",
-      "/api/mau-the-bao-hanh": "/mau-the-bao-hanh",
-      "/api/nhan-vien": "/nhan-vien",
-      "/api/bang-luong": "/bang-luong",
-      "/api/baocao": "/bao-cao",
-      "/api/quyen-su-dung": "/quyen-su-dung",
-      "/api/cong-ty": "/cong-ty",
-      "/api/nha-cung-cap": "/nha-cung-cap",
-      "/api/ghi-chu": "/ghi-chu",
+      "/api/nhakhoa": ["/nha-khoa"],
+      "/api/nguoilienhe": ["/nguoi-lien-he"],
+      "/api/benhnhan": ["/benh-nhan"],
+      "/api/sanpham": ["/san-pham"],
+      "/api/congdoan": ["/cong-doan"],
+      "/api/donhang": ["/don-hang", "/ke-hoach-giao-hang", "/cho-xuat-hoa-don"],
+      "/api/hoa-don": ["/hoa-don", "/cho-xuat-hoa-don"],
+      "/api/phieu-thu": ["/phieu-thu"],
+      "/api/phieu-bao-hanh": ["/phieu-bao-hanh"],
+      "/api/mau-the-bao-hanh": ["/mau-the-bao-hanh"],
+      "/api/nhan-vien": ["/nhan-vien", "/bang-luong"],
+      "/api/bang-luong": ["/bang-luong"],
+      "/api/baocao": ["/bao-cao", "/bao-cao-doanh-thu", "/bao-cao-khach-hang", "/doanh-so-khach-hang", "/doanh-so-san-pham", "/doanh-so-thoi-gian"],
+      "/api/quyen-su-dung": ["/quyen-su-dung"],
+      "/api/cong-ty": ["/cong-ty"],
+      "/api/nha-cung-cap": ["/nha-cung-cap"],
+      "/api/ghi-chu": ["/ghi-chu"],
+      "/api/kho": ["/kho"],
+      "/api/chi-phi": ["/chi-phi"],
     };
 
-    const mappedMenuPath = pathMap[baseUrl];
+    const mappedPaths = pathMap[baseUrl];
 
     // Nếu tài khoản có quyenSuDung được gán và route thuộc sơ đồ menu động
-    if (staff.quyenSuDung && mappedMenuPath) {
+    if (staff.quyenSuDung && mappedPaths) {
       const isCatalogLookup = [
         "/api/nhakhoa",
         "/api/sanpham",
@@ -202,14 +208,15 @@ exports.checkPermission = async (req, res, next) => {
         return next(); // Cho phép đọc danh mục hỗ trợ (dropdown/charts)
       }
 
-      if (permissions.includes(mappedMenuPath)) {
+      const hasAccess = mappedPaths.some((p) => permissions.includes(p));
+      if (hasAccess) {
         return next();
       } else {
         // Bị từ chối quyền truy cập động
         return res.status(403).json({
-          message: `Tài khoản của bạn không có quyền truy cập chức năng này (yêu cầu quyền: ${mappedMenuPath})`,
+          message: `Tài khoản của bạn không có quyền truy cập chức năng này (yêu cầu một trong các quyền: ${mappedPaths.join(", ")})`,
           appRole,
-          requiredPermission: mappedMenuPath,
+          requiredPermissions: mappedPaths,
         });
       }
     }
