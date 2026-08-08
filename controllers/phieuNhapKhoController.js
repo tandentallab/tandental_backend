@@ -109,6 +109,23 @@ exports.getAll = async (req, res) => {
 
         const total = await PhieuNhapKho.countDocuments(filter);
 
+        // ── Tính tổng tiền toàn bộ kết quả đang lọc (không phụ thuộc skip/limit) ──
+        const tongTienAgg = await PhieuNhapKho.aggregate([
+            { $match: filter },
+            {
+                $project: {
+                    tongTienPhieu: {
+                        $add: [
+                            { $sum: "$danhSachVatLieu.thanhTien" },
+                            { $ifNull: ["$phiPhatSinh", 0] },
+                        ],
+                    },
+                },
+            },
+            { $group: { _id: null, tongTien: { $sum: "$tongTienPhieu" } } },
+        ]);
+        const tongTien = tongTienAgg[0]?.tongTien || 0;
+
         const phieuNhapKhos = await PhieuNhapKho.find(filter)
             .select(
                 "ngayTao soPhieu trangThaiNhap trangThaiThanhToan nguoiTao ghiChu nhaCungCap danhSachVatLieu ngayNhan VAT phiPhatSinh"
@@ -144,7 +161,7 @@ exports.getAll = async (req, res) => {
             return { ...obj, tongTien };
         });
 
-        res.status(200).json({ success: true, data, total, page, limit });
+        res.status(200).json({ success: true, data, total, page, limit, tongTien });
     } catch (error) {
         res.status(500).json({
             success: false,
