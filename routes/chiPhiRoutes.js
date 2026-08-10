@@ -10,6 +10,7 @@ router.get('/quy/lich-su', verifyToken, checkPermission, chiPhiController.lichSu
 router.get('/quy/ton-quy-ngay', verifyToken, checkPermission, chiPhiController.tinhTonQuyTheoNgay);
 
 // --- ROUTE CŨ GIỮ NGUYÊN ---
+router.post('/phatsinh', verifyToken, checkPermission, chiPhiController.taoChiPhiPhatSinh); // THÊM DÒNG NÀY
 router.post('/', verifyToken, checkPermission, chiPhiController.taoChiPhi); //[cite: 3]
 router.get('/', verifyToken, checkPermission, chiPhiController.layDanhSachChiPhi); //[cite: 3]
 router.get('/loai', verifyToken, checkPermission, chiPhiController.layDanhSachLoaiChiPhi); //[cite: 3]

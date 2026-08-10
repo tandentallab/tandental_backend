@@ -19,6 +19,7 @@ const chiPhiSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
+    isPhatSinh: { type: Boolean, default: false },
     ngayTao: {
         type: Date,
         default: Date.now // Lưu lại ngày tạo để sau này làm báo cáo
