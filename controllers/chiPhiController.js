@@ -405,7 +405,13 @@ exports.tinhTonQuyTheoNgay = async (req, res) => {
 
             // Tổng chi TRƯỚC 00:00:00 ngày đang xét (chỉ tính từ lúc bắt đầu có quỹ)
             const tongChiTruoc = await ChiPhi.aggregate([
-                { $match: { loaiChiPhi: { $ne: "Nạp quỹ" }, ngayTao: { $gte: lanNapDauTien.ngayTao, $lt: startOfDay } } },
+                {
+                    $match: {
+                        loaiChiPhi: { $ne: "Nạp quỹ" },
+                        isPhatSinh: { $ne: true }, // SỬA: Ignore phát sinh
+                        ngayTao: { $gte: lanNapDauTien.ngayTao, $lt: startOfDay }
+                    }
+                },
                 { $group: { _id: null, tong: { $sum: "$gia" } } }
             ]);
             const chiTruoc = tongChiTruoc.length > 0 ? tongChiTruoc[0].tong : 0;
@@ -422,7 +428,13 @@ exports.tinhTonQuyTheoNgay = async (req, res) => {
 
         // 3. Tính Phát sinh CHI trong chính ngày đó (từ 00:00:00 đến 23:59:59)
         const tongChiTrongNgay = await ChiPhi.aggregate([
-            { $match: { loaiChiPhi: { $ne: "Nạp quỹ" }, ngayTao: { $gte: startOfDay, $lte: endOfDay } } },
+            {
+                $match: {
+                    loaiChiPhi: { $ne: "Nạp quỹ" },
+                    isPhatSinh: { $ne: true }, // SỬA: Ignore phát sinh
+                    ngayTao: { $gte: startOfDay, $lte: endOfDay }
+                }
+            },
             { $group: { _id: null, tong: { $sum: "$gia" } } }
         ]);
         phatSinhChiTrongNgay = tongChiTrongNgay.length > 0 ? tongChiTrongNgay[0].tong : 0;
