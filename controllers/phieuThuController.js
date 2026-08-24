@@ -9,6 +9,8 @@ exports.getAllPhieuThu = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
     const { search, nhaKhoaId, dateFrom, dateTo } = req.query;
+    const hasSearch = Boolean(search?.trim());
+    const baseMatch = {};
 
     const pipeline = [];
 
@@ -17,7 +19,16 @@ exports.getAllPhieuThu = async (req, res) => {
       const dateMatch = {};
       if (dateFrom) dateMatch.$gte = new Date(dateFrom);
       if (dateTo) dateMatch.$lte = new Date(dateTo);
-      pipeline.push({ $match: { ngayThu: dateMatch } });
+      baseMatch.ngayThu = dateMatch;
+    }
+
+    if (Object.keys(baseMatch).length > 0) pipeline.push({ $match: baseMatch });
+
+    // Không cần lookup toàn bộ collection khi không tìm kiếm/lọc theo nha khoa.
+    // Chỉ lấy 20 phiếu cần hiển thị trước, sau đó mới enrich dữ liệu liên quan.
+    const canPaginateBeforeLookups = !nhaKhoaId && !hasSearch;
+    if (canPaginateBeforeLookups) {
+      pipeline.push({ $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limit });
     }
 
     // 🔥 LOGIC LẤY THÔNG TIN NHA KHOA ĐÃ ĐƯỢC TỐI ƯU SIÊU TỐC
@@ -60,7 +71,7 @@ exports.getAllPhieuThu = async (req, res) => {
       { $unwind: { path: "$nguoiTaoInfo", preserveNullAndEmptyArrays: true } },
     );
 
-    if (search && search.trim() !== "") {
+    if (hasSearch) {
       const keyword = search.trim();
       pipeline.push({
         $match: {
@@ -72,14 +83,13 @@ exports.getAllPhieuThu = async (req, res) => {
       });
     }
 
-    pipeline.push({ $sort: { createdAt: -1 } });
+    if (!canPaginateBeforeLookups) pipeline.push({ $sort: { createdAt: -1 } });
 
     // Enrich danhSachHoaDon with full hoaDon details
     const countPipeline = [...pipeline, { $count: "total" }];
     const dataPipeline = [
       ...pipeline,
-      { $skip: skip },
-      { $limit: limit },
+      ...(canPaginateBeforeLookups ? [] : [{ $skip: skip }, { $limit: limit }]),
       {
         $addFields: {
           danhSachHoaDon: {
@@ -108,12 +118,12 @@ exports.getAllPhieuThu = async (req, res) => {
       },
     ];
 
-    const [countResult, data] = await Promise.all([
-      PhieuThu.aggregate(countPipeline),
+    const [total, data] = await Promise.all([
+      canPaginateBeforeLookups
+        ? PhieuThu.countDocuments(baseMatch)
+        : PhieuThu.aggregate(countPipeline).then((result) => result[0]?.total || 0),
       PhieuThu.aggregate(dataPipeline),
     ]);
-
-    const total = countResult[0]?.total || 0;
 
     res.json({
       success: true,

@@ -98,4 +98,9 @@ phieuThuSchema.pre("save", async function (next) {
   this.soPhieuThu = `${prefix}${String(nextNumber).padStart(4, "0")}`;
 });
 
+phieuThuSchema.index({ createdAt: -1 });
+phieuThuSchema.index({ ngayThu: -1 });
+phieuThuSchema.index({ nhaKhoa: 1 });
+phieuThuSchema.index({ nguoiTao: 1 });
+
 module.exports = mongoose.model("PhieuThu", phieuThuSchema);
