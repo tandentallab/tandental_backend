@@ -165,6 +165,7 @@ exports.checkPermission = async (req, res, next) => {
 
     // 2. Kiểm tra phân quyền động (Dynamic Permissions)
     const permissions = staff.quyenSuDung?.permissions || [];
+    req.user.permissions = permissions;
     const baseUrl = req.baseUrl || "";
 
     const pathMap = {

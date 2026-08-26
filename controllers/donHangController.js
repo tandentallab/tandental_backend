@@ -182,7 +182,7 @@ exports.getAllDonHang = async (req, res) => {
             { path: "nhaKhoa", select: "tenGiaoDich hoVaTen" },
             { path: "bacSi", select: "hoVaTen soDienThoai" },
             { path: "benhNhan", select: "hoVaTen soHoSo" },
-            { path: "danhSachSanPham.sanPham", select: "tenSanPham donGiaChung loaiTinh quyTrinh" },
+            { path: "danhSachSanPham.sanPham", select: "tenSanPham donGiaChung loaiTinh nhomSanPham quyTrinh" },
         ];
 
         const now = new Date();
@@ -224,7 +224,7 @@ exports.getDonHangById = async (req, res) => {
             .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe moTa")
             .populate("bacSi", "hoVaTen soDienThoai email")
             .populate("benhNhan", "hoVaTen soHoSo soDienThoai")
-            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh baoHanhMacDinh")
+            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh nhomSanPham quyTrinh baoHanhMacDinh")
             .populate("danhSachSanPham.donHangCu")
         if (!donHang) {
             return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
@@ -462,6 +462,19 @@ exports.updateDonHang = async (req, res) => {
             });
         }
 
+        const deliveryTimePermission = "/don-hang/sua-gio-giao";
+        if (Object.prototype.hasOwnProperty.call(updateData, "henGiao")) {
+            const oldDeliveryTime = donHangHienTai.henGiao ? new Date(donHangHienTai.henGiao).getTime() : null;
+            const newDeliveryTime = updateData.henGiao ? new Date(updateData.henGiao).getTime() : null;
+            if (oldDeliveryTime !== newDeliveryTime && !req.user?.permissions?.includes(deliveryTimePermission)) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Bạn không có quyền sửa giờ giao của đơn hàng",
+                    requiredPermission: deliveryTimePermission,
+                });
+            }
+        }
+
         // 🔥 Bảo vệ ngày nhận nếu đã xuất HĐ (redundant nhưng giữ lại an toàn)
         if (updateData.ngayNhan) {
             const oldDate = new Date(donHangHienTai.ngayNhan).getTime();
@@ -492,7 +505,7 @@ exports.updateDonHang = async (req, res) => {
             .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe")
             .populate("bacSi", "hoVaTen soDienThoai email")
             .populate("benhNhan", "hoVaTen soHoSo soDienThoai")
-            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh baoHanhMacDinh")
+            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh nhomSanPham quyTrinh baoHanhMacDinh")
             .populate("danhSachSanPham.donHangCu");
 
         if (!updatedDonHang) {
@@ -542,7 +555,7 @@ exports.updateTrangThai = async (req, res) => {
             .populate("nhaKhoa", "hoVaTen tenGiaoDich soDienThoai email diaChiCuThe")
             .populate("bacSi", "hoVaTen soDienThoai email")
             .populate("benhNhan", "hoVaTen soHoSo soDienThoai")
-            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh baoHanhMacDinh")
+            .populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh nhomSanPham quyTrinh baoHanhMacDinh")
             .populate("danhSachSanPham.donHangCu");
         if (!updated) {
             return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
@@ -572,7 +585,7 @@ exports.updateCongDoanStatus = async (req, res) => {
             sp.trangThaiCongDoan.push({ thuTu, trangThai });
         }
         await donHang.save();
-        await donHang.populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh quyTrinh baoHanhMacDinh");
+        await donHang.populate("danhSachSanPham.sanPham", "tenSanPham donGiaChung loaiTinh nhomSanPham quyTrinh baoHanhMacDinh");
         res.status(200).json({ success: true, data: donHang });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
