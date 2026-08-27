@@ -147,6 +147,7 @@ exports.checkPermission = async (req, res, next) => {
 
     const appRole = resolveAppRoleFromStaff(staff);
     req.user.appRole = appRole;
+    req.user.permissions = staff.quyenSuDung?.permissions || [];
 
     // 1. Admin luôn luôn được phép truy cập
     if (appRole === APP_ROLES.ADMIN) {
@@ -165,7 +166,6 @@ exports.checkPermission = async (req, res, next) => {
 
     // 2. Kiểm tra phân quyền động (Dynamic Permissions)
     const permissions = staff.quyenSuDung?.permissions || [];
-    req.user.permissions = permissions;
     const baseUrl = req.baseUrl || "";
 
     const pathMap = {
