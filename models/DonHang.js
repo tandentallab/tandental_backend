@@ -120,6 +120,8 @@ const donHangSchema = new mongoose.Schema(
         ghiChuChung: String,
         ghiChuTaiChinh: String,
         ghiChuSanXuat: String,
+        // Lý do khi dời ngày hẹn giao về sau
+        lyDoHenLai: { type: String, default: "" },
 
         // Nhật ký chỉnh sửa
         nhatKyChinhSua: [
@@ -152,4 +154,4 @@ const donHangSchema = new mongoose.Schema(
 // Thêm dòng này để tăng tốc độ truy vấn theo ngày tháng và trạng thái
 donHangSchema.index({ createdAt: -1, trangThai: 1 });
 
-module.exports = mongoose.model("DonHang", donHangSchema);
+module.exports = mongoose.model("DonHang", donHangSchema);

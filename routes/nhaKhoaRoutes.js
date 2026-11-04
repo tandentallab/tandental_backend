@@ -7,13 +7,15 @@ const {
   updateNhaKhoa,
   deleteNhaKhoa,
   updateSoDuDauKy,
-  upsertGhiChu
+  upsertGhiChu,
+  getNhaKhoaLauChuaGuiDon
 } = require("../controllers/nhaKhoaController");
 
 const { verifyToken, checkPermission } = require("../middleware/authMiddleware");
 
 router.post("/", verifyToken, checkPermission, createNhaKhoa);
 router.get("/", verifyToken, checkPermission, getAllNhaKhoa);
+router.get("/lau-chua-gui-don", verifyToken, checkPermission, getNhaKhoaLauChuaGuiDon);
 router.put('/:id/so-du-dau-ky', updateSoDuDauKy);
 router.put("/:id/ghi-chu", verifyToken, checkPermission, upsertGhiChu);
 router.put("/:id", verifyToken, checkPermission, updateNhaKhoa)

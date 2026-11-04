@@ -1,6 +1,7 @@
 const mongoose = require("mongoose"); // Bổ sung dòng này để hết lỗi
 const NhaKhoa = require("../models/NhaKhoa");
 const HoaDon = require("../models/HoaDon");
+const DonHang = require("../models/DonHang");
 const { getCongNoTatCaNhaKhoa } = require("../utils/congNo");
 
 
@@ -23,24 +24,71 @@ exports.createNhaKhoa = async (req, res) => {
 
 exports.getAllNhaKhoa = async (req, res) => {
   try {
-    const [danhSach, danhSachCongNo] = await Promise.all([
+    const [danhSach, danhSachCongNo, danhSachDonCuoi] = await Promise.all([
       NhaKhoa.find(),
       getCongNoTatCaNhaKhoa(),
+      // Ngày nhận đơn gần nhất của từng nha khoa
+      DonHang.aggregate([
+        { $group: { _id: "$nhaKhoa", ngayDonCuoi: { $max: "$ngayNhan" } } },
+      ]),
     ]);
 
     // Map công nợ theo nhaKhoaId để tra cứu O(1)
     const congNoMap = new Map(
       danhSachCongNo.map((item) => [item.nhaKhoaId.toString(), item.tongCongNo])
     );
+    const donCuoiMap = new Map(
+      danhSachDonCuoi
+        .filter((item) => item._id)
+        .map((item) => [item._id.toString(), item.ngayDonCuoi])
+    );
 
     const data = danhSach.map((nk) => ({
       ...nk.toObject(),
       tongCongNo: congNoMap.get(nk._id.toString()) ?? 0,
+      ngayDonCuoi: donCuoiMap.get(nk._id.toString()) ?? null,
     }));
 
     res.json(data);
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+// ================= NHA KHOA LÂU CHƯA GỬI ĐƠN =================
+// Ngưỡng cảnh báo: số ngày (theo lịch VN) kể từ ngày nhận đơn gần nhất
+const NGUONG_NGAY_CHUA_GUI_DON = 10;
+
+exports.getNhaKhoaLauChuaGuiDon = async (req, res) => {
+  try {
+    const homNay = dayjs().tz(VN_TZ).startOf("day");
+    // Đơn cuối nhận trước mốc này => đã >= NGUONG ngày chưa gửi đơn
+    const moc = homNay.subtract(NGUONG_NGAY_CHUA_GUI_DON - 1, "day").toDate();
+
+    const danhSach = await DonHang.aggregate([
+      { $group: { _id: "$nhaKhoa", ngayDonCuoi: { $max: "$ngayNhan" } } },
+      { $match: { _id: { $ne: null }, ngayDonCuoi: { $lt: moc } } },
+      { $lookup: { from: NhaKhoa.collection.name, localField: "_id", foreignField: "_id", as: "nk" } },
+      { $unwind: "$nk" },
+      { $sort: { ngayDonCuoi: 1 } },
+      {
+        $project: {
+          _id: 1,
+          hoVaTen: "$nk.hoVaTen",
+          tenGiaoDich: "$nk.tenGiaoDich",
+          ngayDonCuoi: 1,
+        },
+      },
+    ]);
+
+    const data = danhSach.map((item) => ({
+      ...item,
+      soNgay: homNay.diff(dayjs(item.ngayDonCuoi).tz(VN_TZ).startOf("day"), "day"),
+    }));
+
+    res.json({ success: true, nguong: NGUONG_NGAY_CHUA_GUI_DON, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 

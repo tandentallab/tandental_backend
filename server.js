@@ -43,11 +43,6 @@ app.use(cors({
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ limit: "15mb", extended: true }));
 
-// test
-app.get("/", (req, res) => {
-  res.send("API OK");
-});
-
 // Serve logo for Excel export
 app.get("/assets/logo.png", (req, res) => {
   res.sendFile(path.join(__dirname, "Picture1.png"));
@@ -95,6 +90,12 @@ const startServer = async () => {
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on ${PORT}`);
+    });
+
+    app.use(express.static(path.join(__dirname, "build")));
+
+    app.use((req, res) => {
+      res.sendFile(path.join(__dirname, "build", "index.html"));
     });
   } catch (error) {
     console.error(error);
