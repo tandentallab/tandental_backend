@@ -1,6 +1,8 @@
 const ChiPhi = require('../models/ChiPhi'); //[cite: 2]
 const BangLuong = require('../models/BangLuong'); //[cite: 2]
 const PhieuNhapKho = require("../models/PhieuNhapKho"); //[cite: 2]
+const { layChiPhiLuongTuCrm } = require('../utils/crmChiPhiLuong');
+const { APP_ROLES } = require('../utils/roleResolver');
 const dayjs = require('dayjs'); //[cite: 2]
 const utc = require('dayjs/plugin/utc'); //[cite: 2]
 const timezone = require('dayjs/plugin/timezone'); //[cite: 2]
@@ -210,6 +212,53 @@ exports.xoaChiPhi = async (req, res) => {
     }
 };
 
+// Dòng chi phí lương của báo cáo tổng hợp: ưu tiên số liệu từ CRM; tháng CRM chưa
+// có kỳ lương (hoặc chưa cấu hình CRM) thì dùng bảng BangLuong cũ.
+async function tongHopChiPhiLuong(thang, nam, ngayTao) {
+    let duLieuCrm = null;
+    let ghiChu = "Lấy từ Bảng lương";
+
+    try {
+        duLieuCrm = await layChiPhiLuongTuCrm(thang, nam);
+    } catch (error) {
+        console.error("Lỗi lấy chi phí lương từ CRM:", error);
+        ghiChu = "Không lấy được từ CRM — đang dùng Bảng lương cũ, số liệu có thể thiếu";
+    }
+
+    const dongLuong = {
+        _id: "auto_luong_nhan_vien",
+        tenChiPhi: `Tổng lương nhân viên tháng ${thang}/${nam}`,
+        loaiChiPhi: "Lương NV",
+        ngayTao,
+        isAuto: true
+    };
+
+    if (duLieuCrm) {
+        return {
+            ...dongLuong,
+            gia: duLieuCrm.tongChiPhiLuong,
+            ghiChu: duLieuCrm.daChot ? "Lấy từ CRM" : "Lấy từ CRM — tạm tính, kỳ lương chưa chốt",
+            chiTiet: duLieuCrm.chiTiet.map((dong) => ({
+                _id: dong.userId,
+                nhanVien: { hoVaTen: dong.hoTen },
+                luongCanBan: dong.luongCoBan,
+                ungTruoc: dong.ungTruoc,
+                truKhac: dong.truKhac,
+                thucNhan: dong.thucLinh,
+                chiPhiLuong: dong.chiPhiLuong
+            }))
+        };
+    }
+
+    const bangLuongList = await BangLuong.find({ thang, nam }).populate('nhanVien').lean();
+    return {
+        ...dongLuong,
+        gia: bangLuongList.reduce((sum, item) => sum + (item.thucNhan || 0) + (item.ungTruoc || 0), 0),
+        ghiChu,
+        chiTiet: bangLuongList
+    };
+}
+
 // Lấy danh sách chi phí (Lưu ý: Loại bỏ phần "Nạp quỹ" ra khỏi bảng chi phí thông thường để tránh lẫn lộn)
 exports.layDanhSachChiPhi = async (req, res) => {
     try {
@@ -227,22 +276,9 @@ exports.layDanhSachChiPhi = async (req, res) => {
             ngayTao: { $gte: startDate, $lte: endDate }
         }).sort({ ngayTao: -1 }).lean();
 
-        // 2. Tổng hợp LƯƠNG NHÂN VIÊN từ bảng BangLuong
-        const bangLuongList = await BangLuong.find({ thang, nam }).populate('nhanVien').lean();
-        const tongLuongThucNhan = bangLuongList.reduce(
-            (sum, item) => sum + (item.thucNhan || 0) + (item.ungTruoc || 0), 0
-        );
-
-        const chiPhiLuong = {
-            _id: "auto_luong_nhan_vien",
-            tenChiPhi: `Tổng lương nhân viên tháng ${thang}/${nam}`,
-            loaiChiPhi: "Lương NV",
-            gia: tongLuongThucNhan,
-            ghiChu: "Lấy từ Bảng lương",
-            ngayTao: startDate,
-            isAuto: true,
-            chiTiet: bangLuongList
-        };
+        // 2. Tổng hợp LƯƠNG NHÂN VIÊN — chỉ Admin mới xem dòng này, không gửi lương cho vai trò khác
+        const laAdmin = req.user?.appRole === APP_ROLES.ADMIN;
+        const chiPhiLuong = laAdmin ? await tongHopChiPhiLuong(thang, nam, startDate) : null;
 
         // 3. Tính CHI PHÍ VẬT LIỆU TỰ ĐỘNG TỪ KHO
         const thongKeVatLieu = await PhieuNhapKho.aggregate([
@@ -288,7 +324,7 @@ exports.layDanhSachChiPhi = async (req, res) => {
         // 5. Tổng hợp dữ liệu
         const danhSachChiPhi = [
             chiPhiVatLieu,
-            chiPhiLuong,
+            ...(chiPhiLuong ? [chiPhiLuong] : []),
             chiPhiPhatSinhRow, // Đưa dòng Phát Sinh vào mảng tổng hợp
             ...chiPhiThuCong
         ].map(item => ({
