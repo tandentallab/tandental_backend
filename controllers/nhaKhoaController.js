@@ -3,6 +3,7 @@ const NhaKhoa = require("../models/NhaKhoa");
 const HoaDon = require("../models/HoaDon");
 const DonHang = require("../models/DonHang");
 const { getCongNoTatCaNhaKhoa } = require("../utils/congNo");
+const { guiNhaKhoaSangCrm } = require("../utils/crmNhaKhoa");
 
 
 // ================= CẤU HÌNH DAYJS =================
@@ -17,6 +18,12 @@ exports.createNhaKhoa = async (req, res) => {
   try {
     const data = await NhaKhoa.create(req.body);
     res.status(201).json(data);
+
+    // Không chờ CRM để việc tạo nha khoa không phụ thuộc CRM. Nha khoa gửi lỗi
+    // được bù bằng scripts/dongBoNhaKhoaSangCrm.js.
+    guiNhaKhoaSangCrm([data]).catch((error) => {
+      console.error(`Lỗi gửi nha khoa ${data._id} sang CRM:`, error);
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
