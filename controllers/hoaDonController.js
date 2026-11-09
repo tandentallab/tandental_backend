@@ -1000,6 +1000,27 @@ exports.deleteHoaDon = async (req, res) => {
   }
 };
 
+// ================= NHA KHOA CHƯA TỪNG CÓ HÓA ĐƠN =================
+// Nhận ?ids=a,b,c — trả về những nha khoa trong danh sách chưa có hóa đơn nào
+// (kể cả Lưu tạm). Không tính hóa đơn số dư đầu kỳ (SDDK) vì đó không phải hóa đơn thật.
+exports.getNhaKhoaChuaCoHoaDon = async (req, res) => {
+  try {
+    const ids = [...new Set(String(req.query.ids || "").split(",").map((id) => id.trim()))]
+      .filter((id) => mongoose.Types.ObjectId.isValid(id));
+    if (ids.length === 0) return res.json({ success: true, data: [] });
+
+    const daCoHoaDon = await HoaDon.distinct("nhaKhoa", {
+      nhaKhoa: { $in: ids },
+      soHoaDon: { $not: /^SDDK/i },
+    });
+    const daCoSet = new Set(daCoHoaDon.map(String));
+
+    res.json({ success: true, data: ids.filter((id) => !daCoSet.has(id)) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ================= LẤY HÓA ĐƠN CHƯA THANH TOÁN THEO NHA KHOA =================
 exports.getHoaDonChuaThanhToanByNhaKhoa = async (req, res) => {
   try {

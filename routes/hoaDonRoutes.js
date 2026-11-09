@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const hoaDonController = require("../controllers/hoaDonController");
+const { verifyToken } = require("../middleware/authMiddleware");
 
 /* ================= QUẢN TRỊ (ADMIN) ================= */
 
@@ -30,6 +31,9 @@ router.get(
 );
 
 router.get("/ngay-gan-nhat-all", hoaDonController.getNgayXuatHoaDonGanNhatAll);
+
+// Nha khoa chưa từng có hóa đơn (?ids=a,b,c) — dùng để hỏi cập nhật bảng giá riêng
+router.get("/nha-khoa-chua-co-hoa-don", verifyToken, hoaDonController.getNhaKhoaChuaCoHoaDon);
 
 
 // Lấy danh sách hóa đơn theo nha khoa
