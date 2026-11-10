@@ -128,7 +128,7 @@ exports.getAll = async (req, res) => {
 
         const phieuNhapKhos = await PhieuNhapKho.find(filter)
             .select(
-                "ngayTao soPhieu trangThaiNhap trangThaiThanhToan nguoiTao ghiChu nhaCungCap danhSachVatLieu ngayNhan VAT phiPhatSinh"
+                "ngayTao soPhieu trangThaiNhap trangThaiThanhToan nguoiTao ghiChu nhaCungCap danhSachVatLieu ngayNhan VAT phiPhatSinh lyDoPhiPhatSinh"
             )
             .populate("nhaCungCap", "ten")
             .populate("danhSachVatLieu.vatLieu", "tenVatLieu donViTinh")
@@ -154,9 +154,11 @@ exports.getAll = async (req, res) => {
                     vlMatchIds.has(item.vatLieu?._id?.toString())
                 );
             }
+            // Tổng tiền phiếu = tiền vật liệu + phí phát sinh
+            // (khi chỉ lấy vật liệu khớp thì không cộng phí phát sinh vì không thuộc riêng vật liệu nào)
             const tongTien = obj.danhSachVatLieu.reduce(
                 (sum, item) => sum + (item.thanhTien || 0),
-                0
+                vlMatchIds ? 0 : obj.phiPhatSinh || 0
             );
             return { ...obj, tongTien };
         });
@@ -227,7 +229,8 @@ exports.update = async (req, res) => {
             danhSachVatLieu,
             currentRole,
             VAT,
-            phiPhatSinh
+            phiPhatSinh,
+            lyDoPhiPhatSinh
         } = req.body;
 
         const phieu = await PhieuNhapKho.findById(id);
@@ -268,6 +271,7 @@ exports.update = async (req, res) => {
         if (nhaCungCap !== undefined) phieu.nhaCungCap = nhaCungCap || null;
         if (VAT !== undefined) phieu.VAT = VAT;
         if (phiPhatSinh !== undefined) phieu.phiPhatSinh = phiPhatSinh || 0;
+        if (lyDoPhiPhatSinh !== undefined) phieu.lyDoPhiPhatSinh = (lyDoPhiPhatSinh || "").trim();
 
         await phieu.save();
 
@@ -278,7 +282,7 @@ exports.update = async (req, res) => {
 
         const tongTien = populated.danhSachVatLieu.reduce(
             (sum, item) => sum + (item.thanhTien || 0),
-            0
+            populated.phiPhatSinh || 0
         );
 
         res.status(200).json({ success: true, data: { ...populated.toObject(), tongTien } });

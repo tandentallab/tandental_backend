@@ -11,6 +11,22 @@ dayjs.extend(utc); //[cite: 2]
 dayjs.extend(timezone); //[cite: 2]
 dayjs.tz.setDefault("Asia/Ho_Chi_Minh"); //[cite: 2]
 
+// Tổng chi phí phiếu nhập = tiền vật liệu + phí phát sinh (tính theo từng phiếu, không $unwind
+// để phí phát sinh không bị nhân lên theo số dòng vật liệu)
+const pipelineTongChiPhiPhieuNhap = [
+    {
+        $project: {
+            tongPhieu: {
+                $add: [
+                    { $sum: { $ifNull: ["$danhSachVatLieu.thanhTien", []] } },
+                    { $ifNull: ["$phiPhatSinh", 0] },
+                ],
+            },
+        },
+    },
+    { $group: { _id: null, tongChiPhi: { $sum: "$tongPhieu" } } },
+];
+
 // ================= 1. API QUỸ CHI PHÍ (TÍNH TOÁN ĐỘNG) =================
 
 // Thao tác nộp tiền vào quỹ
@@ -283,8 +299,7 @@ exports.layDanhSachChiPhi = async (req, res) => {
         // 3. Tính CHI PHÍ VẬT LIỆU TỰ ĐỘNG TỪ KHO
         const thongKeVatLieu = await PhieuNhapKho.aggregate([
             { $match: { trangThaiNhap: "Đã nhận", ngayTao: { $gte: startDate, $lte: endDate } } },
-            { $unwind: "$danhSachVatLieu" },
-            { $group: { _id: null, tongChiPhi: { $sum: "$danhSachVatLieu.thanhTien" } } }
+            ...pipelineTongChiPhiPhieuNhap
         ]);
 
         const tongGiaVatLieu = thongKeVatLieu.length > 0 ? thongKeVatLieu[0].tongChiPhi : 0;
@@ -354,8 +369,7 @@ exports.thongKeChiPhiNhapTheoThang = async (req, res) => {
 
         const result = await PhieuNhapKho.aggregate([
             { $match: matchStage }, //[cite: 2]
-            { $unwind: "$danhSachVatLieu" }, //[cite: 2]
-            { $group: { _id: null, tongChiPhi: { $sum: "$danhSachVatLieu.thanhTien" } } } //[cite: 2]
+            ...pipelineTongChiPhiPhieuNhap
         ]);
 
         const tongChiPhi = result.length > 0 ? result[0].tongChiPhi : 0; //[cite: 2]
