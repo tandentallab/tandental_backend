@@ -36,7 +36,7 @@ const normalizeRange = (startDate, endDate) => {
 //
 // Ưu tiên:
 //   1. Đơn đã xuất HĐ → donGia snapshot từ HoaDon (cố định)
-//   2. Đơn chưa xuất HĐ → giá riêng từ BangGia
+//   2. Đơn chưa xuất HĐ → đơn giá nhập tay trên dòng (Mua giùm nha khoa), rồi giá riêng từ BangGia
 //   3. Fallback → donGiaChung từ SanPham
 // ─────────────────────────────────────────────────────────────────────────────
 const buildGiaPipeline = () => [
@@ -102,9 +102,15 @@ const buildGiaPipeline = () => [
                     if: { $gt: [{ $size: "$hoaDonMatch" }, 0] },
                     then: { $arrayElemAt: ["$hoaDonMatch.donGiaHoaDon", 0] },
                     else: {
+                        // Đơn giá nhập tay (Mua giùm nha khoa) → bảng giá riêng → giá chung
                         $ifNull: [
-                            { $arrayElemAt: ["$bangGiaInfo.donGia", 0] },
-                            "$sanPhamInfo.donGiaChung"
+                            "$danhSachSanPham.donGia",
+                            {
+                                $ifNull: [
+                                    { $arrayElemAt: ["$bangGiaInfo.donGia", 0] },
+                                    "$sanPhamInfo.donGiaChung"
+                                ]
+                            }
                         ]
                     }
                 }

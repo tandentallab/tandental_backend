@@ -34,6 +34,46 @@ const resolveTrangThaiTuYeuCauThu = (danhSachSanPham, currentTrangThai) => {
     return currentTrangThai;
 };
 
+const NHOM_MUA_GIUM = "Mua giùm nha khoa";
+
+// Chuẩn hoá & kiểm tra các dòng sản phẩm "Mua giùm nha khoa":
+// - Bắt buộc có ghi chú (tên món hàng) và đơn giá >= 0
+// - Dòng thuộc nhóm khác: xoá donGia để không ghi đè bảng giá
+// Trả về message lỗi (string) hoặc null nếu hợp lệ. Mutate trực tiếp mảng truyền vào.
+const chuanHoaDongMuaGium = async (danhSachSanPham) => {
+    if (!Array.isArray(danhSachSanPham) || danhSachSanPham.length === 0) return null;
+
+    const spIds = [...new Set(danhSachSanPham.map((sp) => sp?.sanPham).filter(Boolean).map(String))];
+    const muaGiumIds = new Set(
+        (await SanPham.find({ _id: { $in: spIds }, nhomSanPham: NHOM_MUA_GIUM }).select("_id").lean())
+            .map((sp) => String(sp._id))
+    );
+
+    for (let i = 0; i < danhSachSanPham.length; i++) {
+        const sp = danhSachSanPham[i];
+        if (!sp) continue;
+        if (!muaGiumIds.has(String(sp.sanPham))) {
+            sp.donGia = null;
+            continue;
+        }
+        sp.ghiChu = (sp.ghiChu || "").trim();
+        if (!sp.ghiChu) {
+            return `Dòng ${i + 1}: Mua giùm nha khoa — vui lòng nhập tên món hàng ở ô Ghi chú`;
+        }
+        const donGia = Number(sp.donGia);
+        if (sp.donGia === null || sp.donGia === undefined || sp.donGia === "" || !Number.isFinite(donGia) || donGia < 0) {
+            return `Dòng ${i + 1}: Mua giùm nha khoa — vui lòng nhập đơn giá hợp lệ`;
+        }
+        sp.donGia = donGia;
+        // Không áp dụng vị trí răng / màu / yêu cầu thử cho hàng mua giùm
+        sp.viTri = [];
+        sp.viTriText = "";
+        sp.mau = "";
+        sp.yeuCauThu = [];
+    }
+    return null;
+};
+
 const generateMaDonHang = async () => {
     const prefix = buildOrderCodePrefix();
     const regex = new RegExp(`^${prefix}\\d{4}$`);
@@ -64,6 +104,11 @@ exports.createDonHang = async (req, res) => {
 
         if (!checkBenhNhan) {
             return res.status(400).json({ success: false, message: "Bệnh nhân không thuộc Nha khoa này" });
+        }
+
+        const loiMuaGium = await chuanHoaDongMuaGium(danhSachSanPham);
+        if (loiMuaGium) {
+            return res.status(400).json({ success: false, message: loiMuaGium });
         }
 
 
@@ -380,6 +425,13 @@ const buildChinhSuaLog = async (old, updates) => {
             if (Number(oldSp.soLuong) !== Number(newSp.soLuong)) {
                 changes.push(`${spLabel} - Số lượng: ${oldSp.soLuong} → ${newSp.soLuong}`);
             }
+            // Đơn giá nhập tay (Mua giùm nha khoa)
+            const oldDonGia = oldSp.donGia ?? null;
+            const newDonGia = newSp.donGia ?? null;
+            if (oldDonGia !== newDonGia) {
+                const fmt = (v) => (v === null ? "(trống)" : Number(v).toLocaleString("vi-VN"));
+                changes.push(`${spLabel} - Đơn giá: ${fmt(oldDonGia)} → ${fmt(newDonGia)}`);
+            }
             // Màu
             if ((oldSp.mau || "") !== (newSp.mau || "")) {
                 changes.push(`${spLabel} - Màu: "${oldSp.mau || " "}" → "${newSp.mau || " "}"`);
@@ -489,6 +541,13 @@ exports.updateDonHang = async (req, res) => {
                     success: false,
                     message: "Đơn hàng này đã được xuất hóa đơn, hệ thống đã đóng băng không cho phép sửa ngày nhận!"
                 });
+            }
+        }
+
+        if ("danhSachSanPham" in updateData) {
+            const loiMuaGium = await chuanHoaDongMuaGium(updateData.danhSachSanPham);
+            if (loiMuaGium) {
+                return res.status(400).json({ success: false, message: loiMuaGium });
             }
         }
 

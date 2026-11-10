@@ -101,10 +101,14 @@ async function buildDanhSachSanPham(donHangIds, nhaKhoaId, session = null) {
       }
 
       // Snapshot giá realtime tại thời điểm tạo hóa đơn
+      // Ưu tiên đơn giá nhập tay trên dòng (Mua giùm nha khoa) → bảng giá riêng → giá chung
+      const coDonGiaNhapTay = spItem.donGia !== null && spItem.donGia !== undefined;
       const bangGia = bangGiaMap[sanPhamId];
-      const donGiaSnapshot = bangGia
-        ? Number(bangGia.donGia ?? bangGia.gia ?? 0)
-        : Number(sanPham.donGiaChung || 0);
+      const donGiaSnapshot = coDonGiaNhapTay
+        ? Number(spItem.donGia)
+        : bangGia
+          ? Number(bangGia.donGia ?? bangGia.gia ?? 0)
+          : Number(sanPham.donGiaChung || 0);
 
       const soLuong = Number(spItem.soLuong || 1);
       const thanhTienSnapshot = donGiaSnapshot * soLuong;
@@ -121,7 +125,10 @@ async function buildDanhSachSanPham(donHangIds, nhaKhoaId, session = null) {
         donHang: donHang._id,
         sanPhamDonHangId: spItem._id,
         sanPham: spItem.sanPham,
-        tenSanPham: sanPham.tenSanPham || "",
+        // Mua giùm nha khoa: ghi chú của dòng chính là tên món hàng
+        tenSanPham: coDonGiaNhapTay && spItem.ghiChu
+          ? `${sanPham.tenSanPham}: ${spItem.ghiChu}`
+          : sanPham.tenSanPham || "",
         loaiDon: spItem.loaiDon || "Mới",
         viTri: spItem.viTri || [],
         soLuong,

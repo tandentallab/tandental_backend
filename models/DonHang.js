@@ -65,6 +65,13 @@ const donHangSchema = new mongoose.Schema(
                 },
                 mau: String,
                 ghiChu: String,
+                // Đơn giá nhập tay — chỉ dùng cho sản phẩm nhóm "Mua giùm nha khoa"
+                // (ghiChu đóng vai trò tên món hàng). null = dùng bảng giá / giá chung.
+                donGia: {
+                    type: Number,
+                    default: null,
+                    min: [0, "Đơn giá không được nhỏ hơn 0"],
+                },
                 yeuCauThu: [
                     {
                         congDoan: { type: String },
@@ -154,4 +161,4 @@ const donHangSchema = new mongoose.Schema(
 // Thêm dòng này để tăng tốc độ truy vấn theo ngày tháng và trạng thái
 donHangSchema.index({ createdAt: -1, trangThai: 1 });
 
-module.exports = mongoose.model("DonHang", donHangSchema);
+module.exports = mongoose.model("DonHang", donHangSchema);

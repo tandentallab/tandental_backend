@@ -43,6 +43,7 @@ const sanPhamSchema = new mongoose.Schema(
                 values: [
                     "Dịch vụ miễn phí",
                     "Gia Công Sườn",
+                    "Mua giùm nha khoa",
                     "Report Hợp Kim",
                     "Report Toàn Sứ",
                     "Tháo Lắp",
