@@ -174,6 +174,129 @@ exports.createDonHang = async (req, res) => {
     }
 };
 
+// Tìm kiếm text: trả về điều kiện $or theo mã đơn / nha khoa / bệnh nhân / bác sĩ / sản phẩm
+const buildSearchOr = async (search) => {
+    if (!search || !search.trim()) return null;
+    const regex = { $regex: search.trim(), $options: "i" };
+    const [nkIds, bnIds, bsIds, spIds] = await Promise.all([
+        NhaKhoa.find({ $or: [{ tenGiaoDich: regex }, { hoVaTen: regex }] }).distinct("_id"),
+        BenhNhan.find({ hoVaTen: regex }).distinct("_id"),
+        NguoiLienHe.find({ hoVaTen: regex }).distinct("_id"),
+        SanPham.find({ tenSanPham: regex }).distinct("_id"),
+    ]);
+    const orConditions = [{ maDonHang: regex }];
+    if (nkIds.length > 0) orConditions.push({ nhaKhoa: { $in: nkIds } });
+    if (bnIds.length > 0) orConditions.push({ benhNhan: { $in: bnIds } });
+    if (bsIds.length > 0) orConditions.push({ bacSi: { $in: bsIds } });
+    if (spIds.length > 0) orConditions.push({ "danhSachSanPham.sanPham": { $in: spIds } });
+    return orConditions;
+};
+
+// Đơn cũ (trước khi có lichSuHenLai): suy ra các lần dời hẹn giao từ nhật ký chỉnh sửa
+const HEN_GIAO_LOG_REGEX =
+    /Hẹn giao: (\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}) → (\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})/;
+const parseLichSuHenLaiTuNhatKy = (order) => {
+    const result = [];
+    for (const log of order.nhatKyChinhSua || []) {
+        const m = HEN_GIAO_LOG_REGEX.exec(log.hanhDong || "");
+        if (!m) continue;
+        const cu = dayjs.tz(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:00`, "Asia/Ho_Chi_Minh");
+        const moi = dayjs.tz(`${m[8]}-${m[7]}-${m[6]}T${m[9]}:${m[10]}:00`, "Asia/Ho_Chi_Minh");
+        if (moi.format("YYYY-MM-DD") <= cu.format("YYYY-MM-DD")) continue; // chỉ tính dời về sau
+        result.push({
+            henGiaoCu: cu.toDate(),
+            henGiaoMoi: moi.toDate(),
+            lyDo: "",
+            nguoiThuc: log.nguoiThuc || "",
+            thoiGian: log.thoiGian,
+        });
+    }
+    // Lý do hiện tại của đơn gắn cho lần dời gần nhất
+    if (result.length > 0) result[result.length - 1].lyDo = order.lyDoHenLai || "";
+    return result;
+};
+
+// [GET] Đơn hẹn lại: tách 2 nhóm theo khoảng ngày [from, to]
+//  - denNgay: được dời ĐẾN khoảng ngày (hẹn giao mới nằm trong khoảng)
+//  - tuNgay : được dời ĐI KHỎI khoảng ngày (hẹn giao cũ nằm trong khoảng)
+exports.getDonHangHenLai = async (req, res) => {
+    try {
+        const { from, to, search = "", nhaKhoa, trangThai } = req.query;
+        const fromDate = from ? new Date(from) : null;
+        const toDate = to ? new Date(to) : null;
+        const inRange = (d) => {
+            const t = new Date(d).getTime();
+            return (!fromDate || t >= fromDate.getTime()) && (!toDate || t <= toDate.getTime());
+        };
+
+        const base = {};
+        if (nhaKhoa) base.nhaKhoa = nhaKhoa;
+        if (trangThai) base.trangThai = { $in: trangThai.split(",") };
+        const searchOr = await buildSearchOr(search);
+        if (searchOr) base.$or = searchOr;
+
+        const range = {};
+        if (fromDate) range.$gte = fromDate;
+        if (toDate) range.$lte = toDate;
+        const hasRange = Object.keys(range).length > 0;
+
+        const henLaiConds = hasRange
+            ? [
+                { lichSuHenLai: { $elemMatch: { henGiaoMoi: range } } },
+                { lichSuHenLai: { $elemMatch: { henGiaoCu: range } } },
+            ]
+            : [{ "lichSuHenLai.0": { $exists: true } }];
+        // Đơn cũ chưa có lichSuHenLai nhưng nhật ký có ghi đổi hẹn giao
+        henLaiConds.push({
+            "lichSuHenLai.0": { $exists: false },
+            "nhatKyChinhSua.hanhDong": { $regex: "Hẹn giao: " },
+        });
+
+        const orders = await DonHang.find({ ...base, $and: [{ $or: henLaiConds }] })
+            .select("maDonHang nhaKhoa bacSi benhNhan danhSachSanPham ngayNhan henGiao trangThai ghiChuChung lyDoHenLai lichSuHenLai nhatKyChinhSua")
+            .populate([
+                { path: "nhaKhoa", select: "tenGiaoDich hoVaTen" },
+                { path: "bacSi", select: "hoVaTen soDienThoai" },
+                { path: "benhNhan", select: "hoVaTen soHoSo" },
+                { path: "danhSachSanPham.sanPham", select: "tenSanPham" },
+            ])
+            .lean();
+
+        const denNgay = [];
+        const tuNgay = [];
+        for (const order of orders) {
+            const lichSu = order.lichSuHenLai?.length > 0
+                ? order.lichSuHenLai
+                : parseLichSuHenLaiTuNhatKy(order);
+            const { nhatKyChinhSua: _nk, lichSuHenLai: _ls, ...orderInfo } = order;
+            lichSu.forEach((ls, idx) => {
+                const row = {
+                    ...orderInfo,
+                    henLaiKey: `${order._id}_${idx}`,
+                    henGiaoCu: ls.henGiaoCu,
+                    henGiaoMoi: ls.henGiaoMoi,
+                    lyDoHenLaiDong: ls.lyDo || "",
+                    thoiGianHenLai: ls.thoiGian,
+                    nguoiHenLai: ls.nguoiThuc || "",
+                };
+                if (inRange(ls.henGiaoMoi)) denNgay.push(row);
+                if (inRange(ls.henGiaoCu)) tuNgay.push(row);
+            });
+        }
+
+        denNgay.sort((a, b) => new Date(a.henGiaoMoi) - new Date(b.henGiaoMoi));
+        tuNgay.sort((a, b) => new Date(a.henGiaoCu) - new Date(b.henGiaoCu));
+
+        res.status(200).json({ success: true, data: { denNgay, tuNgay } });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Lỗi khi lấy danh sách đơn hẹn lại",
+            error: error.message,
+        });
+    }
+};
+
 // [GET] Lấy danh sách đơn hàng (có phân trang, tìm kiếm, lọc)
 exports.getAllDonHang = async (req, res) => {
     try {
@@ -184,7 +307,13 @@ exports.getAllDonHang = async (req, res) => {
             ngayNhanFrom, ngayNhanTo,
             ycHoanThanhFrom, ycHoanThanhTo,
             henGiaoFrom, henGiaoTo,
+            sortBy,
         } = req.query;
+
+        // Sắp xếp ổn định (có _id làm tie-break) để phân trang/infinite scroll không bị lệch
+        const sortOpt = sortBy === "henGiao"
+            ? { henGiao: 1, _id: 1 }
+            : { createdAt: -1, _id: -1 };
 
         const pageNum = Math.max(1, parseInt(page));
         const limitNum = Math.max(1, Math.min(5000, parseInt(limit)));
@@ -212,22 +341,8 @@ exports.getAllDonHang = async (req, res) => {
         }
 
         // Text search: query related collections for matching IDs
-        if (search && search.trim()) {
-            const keyword = search.trim();
-            const regex = { $regex: keyword, $options: "i" };
-            const [nkIds, bnIds, bsIds, spIds] = await Promise.all([
-                NhaKhoa.find({ $or: [{ tenGiaoDich: regex }, { hoVaTen: regex }] }).distinct("_id"),
-                BenhNhan.find({ hoVaTen: regex }).distinct("_id"),
-                NguoiLienHe.find({ hoVaTen: regex }).distinct("_id"),
-                SanPham.find({ tenSanPham: regex }).distinct("_id"),
-            ]);
-            const orConditions = [{ maDonHang: regex }];
-            if (nkIds.length > 0) orConditions.push({ nhaKhoa: { $in: nkIds } });
-            if (bnIds.length > 0) orConditions.push({ benhNhan: { $in: bnIds } });
-            if (bsIds.length > 0) orConditions.push({ bacSi: { $in: bsIds } });
-            if (spIds.length > 0) orConditions.push({ "danhSachSanPham.sanPham": { $in: spIds } });
-            filter.$or = orConditions;
-        }
+        const searchOr = await buildSearchOr(search);
+        if (searchOr) filter.$or = searchOr;
 
         const populateOpts = [
             { path: "nhaKhoa", select: "tenGiaoDich hoVaTen" },
@@ -240,7 +355,7 @@ exports.getAllDonHang = async (req, res) => {
         const [donHangs, total, statsRaw, treHen] = await Promise.all([
             DonHang.find(filter)
                 .populate(populateOpts)
-                .sort({ createdAt: -1 })
+                .sort(sortOpt)
                 .skip(skip)
                 .limit(limitNum),
             DonHang.countDocuments(filter),
@@ -503,7 +618,7 @@ const buildChinhSuaLog = async (old, updates) => {
 // [PUT] Cập nhật đơn hàng
 exports.updateDonHang = async (req, res) => {
     try {
-        const { nhatKyLogEntry, nhatKyChinhSua: _nhatKy, nguoiThucDuyet: _nguoi, ...updateData } = req.body;
+        const { nhatKyLogEntry, nhatKyChinhSua: _nhatKy, nguoiThucDuyet: _nguoi, lichSuHenLai: _lichSu, ...updateData } = req.body;
 
         // Lấy đơn hàng hiện tại để kiểm tra trạng thái khoá và so sánh thay đổi
         const donHangHienTai = await DonHang.findById(req.params.id)
@@ -563,6 +678,24 @@ exports.updateDonHang = async (req, res) => {
                     thoiGian: new Date(),
                 },
             };
+        }
+
+        // Dời ngày hẹn giao về sau (so theo ngày giờ VN) → ghi lịch sử hẹn lại
+        if (updateData.henGiao && donHangHienTai.henGiao) {
+            const ngayCu = dayjs(donHangHienTai.henGiao).tz("Asia/Ho_Chi_Minh").format("YYYY-MM-DD");
+            const ngayMoi = dayjs(updateData.henGiao).tz("Asia/Ho_Chi_Minh").format("YYYY-MM-DD");
+            if (ngayMoi > ngayCu) {
+                updateOp.$push = {
+                    ...(updateOp.$push || {}),
+                    lichSuHenLai: {
+                        henGiaoCu: donHangHienTai.henGiao,
+                        henGiaoMoi: new Date(updateData.henGiao),
+                        lyDo: (updateData.lyDoHenLai || "").trim(),
+                        nguoiThuc: nhatKyLogEntry?.nguoiThuc || "",
+                        thoiGian: new Date(),
+                    },
+                };
+            }
         }
 
         const updatedDonHang = await DonHang.findByIdAndUpdate(req.params.id, updateOp, { new: true })

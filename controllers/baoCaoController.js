@@ -546,3 +546,81 @@ exports.getDoanhThuThang = async (req, res) => {
         res.status(500).json({ success: false, message: err.message });
     }
 };
+// ─────────────────────────────────────────────────────────────────────────────
+// API 8: Năng suất — đếm số răng theo loại đơn (Mới / Sửa / Làm lại + Bảo hành)
+//        tách theo nhóm "Report Hợp Kim" và "Report Toàn Sứ"
+//
+// - Lọc theo ngayNhan trong khoảng thời gian chọn
+// - Chỉ đếm sản phẩm loaiTinh = "Răng" (bỏ "Răng (không đếm)", "Hàm", "Bán hàm"...)
+// - Số răng = danhSachSanPham.soLuong
+// - Trả về tổng hợp + chi tiết theo ngày
+// ─────────────────────────────────────────────────────────────────────────────
+const NHOM_NANG_SUAT = ["Report Hợp Kim", "Report Toàn Sứ"];
+
+exports.getNangSuat = async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+        const { start, end } = normalizeRange(startDate, endDate);
+
+        const rows = await DonHang.aggregate([
+            { $match: { ngayNhan: { $gte: start, $lte: end } } },
+            { $unwind: "$danhSachSanPham" },
+            {
+                $lookup: {
+                    from: "sanphams",
+                    localField: "danhSachSanPham.sanPham",
+                    foreignField: "_id",
+                    as: "sp",
+                },
+            },
+            { $unwind: "$sp" },
+            { $match: { "sp.nhomSanPham": { $in: NHOM_NANG_SUAT }, "sp.loaiTinh": "Răng" } },
+            {
+                $group: {
+                    _id: {
+                        ngay: { $dateToString: { format: "%Y-%m-%d", date: "$ngayNhan", timezone: VN_TZ } },
+                        nhom: "$sp.nhomSanPham",
+                        loaiDon: "$danhSachSanPham.loaiDon",
+                    },
+                    soRang: { $sum: { $ifNull: ["$danhSachSanPham.soLuong", 1] } },
+                },
+            },
+        ]);
+
+        const keyOf = (loaiDon) =>
+            loaiDon === "Mới" ? "moi"
+                : loaiDon === "Hàng sửa" ? "sua"
+                    : "lamLaiBaoHanh"; // "Hàng làm lại" + "Hàng bảo hành"
+        const nhomKey = (nhom) => (nhom === "Report Toàn Sứ" ? "toanSu" : "hopKim");
+        const emptyBucket = () => ({
+            moi: { hopKim: 0, toanSu: 0, tong: 0 },
+            sua: { hopKim: 0, toanSu: 0, tong: 0 },
+            lamLaiBaoHanh: { hopKim: 0, toanSu: 0, tong: 0 },
+            tong: { hopKim: 0, toanSu: 0, tong: 0 },
+        });
+        const add = (bucket, loai, nhom, n) => {
+            bucket[loai][nhom] += n;
+            bucket[loai].tong += n;
+            bucket.tong[nhom] += n;
+            bucket.tong.tong += n;
+        };
+
+        const tongHop = emptyBucket();
+        const theoNgayMap = {};
+        for (const r of rows) {
+            const loai = keyOf(r._id.loaiDon);
+            const nhom = nhomKey(r._id.nhom);
+            add(tongHop, loai, nhom, r.soRang);
+            if (!theoNgayMap[r._id.ngay]) theoNgayMap[r._id.ngay] = emptyBucket();
+            add(theoNgayMap[r._id.ngay], loai, nhom, r.soRang);
+        }
+
+        const theoNgay = Object.keys(theoNgayMap)
+            .sort()
+            .map((ngay) => ({ ngay, ...theoNgayMap[ngay] }));
+
+        res.status(200).json({ success: true, data: { tongHop, theoNgay } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};

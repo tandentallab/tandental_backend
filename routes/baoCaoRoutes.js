@@ -10,6 +10,7 @@ router.get('/doanh-so-khach-hang', verifyToken, checkPermission, baoCaoControlle
 router.get('/doanh-so-san-pham', verifyToken, checkPermission, baoCaoController.getDoanhSoTheoSanPham);
 router.get('/doanh-so-thoi-gian', verifyToken, checkPermission, baoCaoController.getDoanhSoTheoThoiGian);
 router.get('/doanh-thu-thang', verifyToken, checkPermission, baoCaoController.getDoanhThuThang);
+router.get('/nang-suat', verifyToken, checkPermission, baoCaoController.getNangSuat);
 
 
 module.exports = router;

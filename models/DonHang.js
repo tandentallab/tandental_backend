@@ -129,6 +129,16 @@ const donHangSchema = new mongoose.Schema(
         ghiChuSanXuat: String,
         // Lý do khi dời ngày hẹn giao về sau
         lyDoHenLai: { type: String, default: "" },
+        // Lịch sử mỗi lần dời ngày hẹn giao về sau (dùng cho tab "Đơn hẹn lại")
+        lichSuHenLai: [
+            {
+                henGiaoCu: { type: Date, required: true },
+                henGiaoMoi: { type: Date, required: true },
+                lyDo: { type: String, default: "" },
+                nguoiThuc: { type: String, default: "" },
+                thoiGian: { type: Date, default: Date.now },
+            },
+        ],
 
         // Nhật ký chỉnh sửa
         nhatKyChinhSua: [
@@ -160,5 +170,7 @@ const donHangSchema = new mongoose.Schema(
 
 // Thêm dòng này để tăng tốc độ truy vấn theo ngày tháng và trạng thái
 donHangSchema.index({ createdAt: -1, trangThai: 1 });
+donHangSchema.index({ "lichSuHenLai.henGiaoMoi": 1 });
+donHangSchema.index({ "lichSuHenLai.henGiaoCu": 1 });
 
 module.exports = mongoose.model("DonHang", donHangSchema);

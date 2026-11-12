@@ -6,6 +6,7 @@ const { verifyToken, checkPermission } = require("../middleware/authMiddleware")
 router.post("/", verifyToken, checkPermission, donHangController.createDonHang);
 router.get("/", verifyToken, checkPermission, donHangController.getAllDonHang);
 router.get("/thong-ke", verifyToken, checkPermission, donHangController.getThongKe);
+router.get("/hen-lai", verifyToken, checkPermission, donHangController.getDonHangHenLai);
 router.get("/:id", verifyToken, checkPermission, donHangController.getDonHangById);
 router.put("/:id", verifyToken, checkPermission, donHangController.updateDonHang);
 router.patch("/:id/trang-thai", verifyToken, checkPermission, donHangController.updateTrangThai);
