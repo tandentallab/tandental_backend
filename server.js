@@ -33,6 +33,7 @@ const activityLogRoutes = require("./routes/activityLogRoutes");
 const ghiChuRoutes = require("./routes/ghiChuRoutes");
 const chiPhiRoutes = require('./routes/chiPhiRoutes');
 const phieuMuonVatLieu = require('./routes/phieuMuonVatLieuRoutes');
+const tichHopRoutes = require("./routes/tichHopRoutes");
 
 const app = express();
 
@@ -92,6 +93,7 @@ const startServer = async () => {
     );
     app.use("/api/activity-logs", activityLogRoutes);
     app.use("/api/ghi-chu", ghiChuRoutes);
+    app.use("/api/tich-hop", tichHopRoutes);
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on ${PORT}`);
