@@ -550,7 +550,7 @@ exports.getDoanhThuThang = async (req, res) => {
 // API 8: Năng suất — đếm số răng theo loại đơn (Mới / Sửa / Làm lại + Bảo hành)
 //        tách theo nhóm "Report Hợp Kim" và "Report Toàn Sứ"
 //
-// - Lọc theo ngayNhan trong khoảng thời gian chọn
+// - Lọc theo henGiao (ngày hẹn giao) trong khoảng thời gian chọn
 // - Chỉ đếm sản phẩm loaiTinh = "Răng" (bỏ "Răng (không đếm)", "Hàm", "Bán hàm"...)
 // - Số răng = danhSachSanPham.soLuong
 // - Trả về tổng hợp + chi tiết theo ngày
@@ -563,7 +563,7 @@ exports.getNangSuat = async (req, res) => {
         const { start, end } = normalizeRange(startDate, endDate);
 
         const rows = await DonHang.aggregate([
-            { $match: { ngayNhan: { $gte: start, $lte: end } } },
+            { $match: { henGiao: { $gte: start, $lte: end } } },
             { $unwind: "$danhSachSanPham" },
             {
                 $lookup: {
@@ -578,7 +578,7 @@ exports.getNangSuat = async (req, res) => {
             {
                 $group: {
                     _id: {
-                        ngay: { $dateToString: { format: "%Y-%m-%d", date: "$ngayNhan", timezone: VN_TZ } },
+                        ngay: { $dateToString: { format: "%Y-%m-%d", date: "$henGiao", timezone: VN_TZ } },
                         nhom: "$sp.nhomSanPham",
                         loaiDon: "$danhSachSanPham.loaiDon",
                     },
