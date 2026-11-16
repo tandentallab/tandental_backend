@@ -51,6 +51,23 @@ const autoTrangThai = (conLai, daThanhToan, currentTrangThai) => {
 };
 
 // ================= BUILD DANH SACH SAN PHAM FLAT =================
+const noiGhiChu = (...parts) =>
+  parts.map((p) => (p || "").trim()).filter(Boolean).join(" - ");
+
+// Hóa đơn cũ lưu tên "Mua giùm nha khoa: <món hàng>" → tách phần món hàng sang cột Ghi chú
+function tachTenMuaGium(hoaDon) {
+  if (!hoaDon?.danhSachSanPham) return hoaDon;
+  hoaDon.danhSachSanPham.forEach((sp) => {
+    const tenGoc = sp.sanPham?.tenSanPham;
+    const prefix = tenGoc ? `${tenGoc}: ` : null;
+    if (!prefix || !sp.tenSanPham?.startsWith(prefix)) return;
+    const monHang = sp.tenSanPham.slice(prefix.length);
+    sp.tenSanPham = tenGoc;
+    if (!(sp.ghiChu || "").includes(monHang)) sp.ghiChu = noiGhiChu(monHang, sp.ghiChu);
+  });
+  return hoaDon;
+}
+
 async function buildDanhSachSanPham(donHangIds, nhaKhoaId, session = null) {
   const findOptions = session ? { session } : {};
 
@@ -125,10 +142,7 @@ async function buildDanhSachSanPham(donHangIds, nhaKhoaId, session = null) {
         donHang: donHang._id,
         sanPhamDonHangId: spItem._id,
         sanPham: spItem.sanPham,
-        // Mua giùm nha khoa: ghi chú của dòng chính là tên món hàng
-        tenSanPham: coDonGiaNhapTay && spItem.ghiChu
-          ? `${sanPham.tenSanPham}: ${spItem.ghiChu}`
-          : sanPham.tenSanPham || "",
+        tenSanPham: sanPham.tenSanPham || "",
         loaiDon: spItem.loaiDon || "Mới",
         viTri: spItem.viTri || [],
         soLuong,
@@ -136,7 +150,8 @@ async function buildDanhSachSanPham(donHangIds, nhaKhoaId, session = null) {
         thanhTien: roundMoney(thanhTienSnapshot),
         giamGia: roundMoney(giamGia),
         tongCongSanPham: roundMoney(tongCongSanPham),
-        ghiChu: donHang.ghiChuTaiChinh || "",
+        // Mua giùm nha khoa: ghi chú của dòng (= tên món hàng) đưa sang cột Ghi chú
+        ghiChu: noiGhiChu(coDonGiaNhapTay ? spItem.ghiChu : "", donHang.ghiChuTaiChinh),
       });
     }
   }
@@ -705,7 +720,7 @@ exports.getHoaDonById = async (req, res) => {
     res.json({
       success: true,
       data: {
-        ...hoaDon, // Đã là object thuần do dùng .lean()
+        ...tachTenMuaGium(hoaDon), // Đã là object thuần do dùng .lean()
         congNoNhaKhoa,
         noDauKy: noDauKyDong,
         tongCanThanhToan: hoaDon.giaTriThanhToan + noDauKyDong
@@ -911,7 +926,7 @@ exports.updateHoaDon = async (req, res) => {
       success: true,
       message: "Cập nhật hóa đơn thành công",
       data: {
-        ...finalHoaDon.toObject(),
+        ...tachTenMuaGium(finalHoaDon.toObject()),
         congNoNhaKhoa
       }
     });
