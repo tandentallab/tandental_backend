@@ -124,18 +124,17 @@ exports.nhanBangGiaTuCrm = async (req, res) => {
   }
 };
 
-// CRM gửi 1 khách hàng sang: nút "Gửi sang lab" (tạo nếu chưa có), hoặc tự
-// động sau khi sửa khách hàng (chiCapNhat = true: chỉ cập nhật nha khoa đã có,
-// không tạo mới cho khách hàng chưa từng gửi đơn). Gọi lại nhiều lần vẫn an toàn.
+// CRM báo đổi tên khách hàng: cập nhật tên nha khoa đã có bên lab. Không tạo
+// mới — nha khoa chỉ vào lab khi tạo đơn (nhaKhoaController.taoNhaKhoaTuCrm).
+// Gọi lại nhiều lần vẫn an toàn.
 //
 // POST /api/tich-hop/nha-khoa
-// Body: { crmId, maKhachHang, ten, soDienThoai?, email?, diaChi?, tinh?, chiCapNhat? }
-// Trả về: { id, daTao } (id = null nếu chiCapNhat mà lab chưa có nha khoa này)
+// Body: { crmId, maKhachHang, ten }
+// Trả về: { id } (id = null nếu lab chưa có nha khoa này)
 exports.nhanNhaKhoaTuCrm = async (req, res) => {
   try {
-    const body = req.body || {};
-    const { nhaKhoa, daTao } = await dongBoNhaKhoaTuCrm(body, { taoMoi: body.chiCapNhat !== true });
-    res.status(daTao ? 201 : 200).json({ id: nhaKhoa ? nhaKhoa._id.toString() : null, daTao });
+    const { nhaKhoa } = await dongBoNhaKhoaTuCrm(req.body || {}, { taoMoi: false });
+    res.json({ id: nhaKhoa ? nhaKhoa._id.toString() : null });
   } catch (err) {
     if (err instanceof LoiNhaKhoaCrm) return res.status(err.status).json({ message: err.message });
     console.error("Lỗi nhận nha khoa từ CRM:", err);

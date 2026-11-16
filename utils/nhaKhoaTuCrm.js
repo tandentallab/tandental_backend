@@ -2,14 +2,14 @@ const mongoose = require("mongoose");
 const NhaKhoa = require("../models/NhaKhoa");
 const { chuanHoaTen } = require("./chuanHoaTen");
 
-// CRM quản lý nha khoa: chỉ CRM tạo mới, và CRM là nguồn của các trường trong
-// TRUONG_TU_CRM. Lab chỉ quản lý những gì sinh ra từ nha khoa (đơn hàng, hoá
-// đơn, công nợ, ghi chú...). Nha khoa bên lab gắn với khách hàng CRM qua
-// NhaKhoa.maCrm (id khách hàng bên CRM).
+// CRM quản lý nha khoa: chỉ CRM tạo mới, và lab lấy TÊN nha khoa từ CRM
+// (TRUONG_TU_CRM). Các thông tin khác (SĐT, địa chỉ...) lab tự quản lý, cùng
+// những gì sinh ra từ nha khoa (đơn hàng, hoá đơn, công nợ, ghi chú...).
+// Nha khoa bên lab gắn với khách hàng CRM qua NhaKhoa.maCrm (id khách hàng CRM).
 //
 // Nha khoa đến lab theo 3 đường, đều đi qua dongBoNhaKhoaTuCrm:
 //  - tạo đơn mà nha khoa chưa có: lab lấy khách hàng từ CRM về (nhaKhoaController)
-//  - CRM bấm "Gửi sang lab" hoặc sửa khách hàng (POST /api/tich-hop/nha-khoa)
+//  - CRM sửa tên khách hàng: chỉ cập nhật tên (POST /api/tich-hop/nha-khoa)
 //  - script liên kết dữ liệu cũ (scripts/lienKetNhaKhoaCrm.js)
 
 const CRM_TIMEOUT_MS = 15000;
@@ -19,10 +19,6 @@ const MAX_TEXT_LENGTH = 500;
 // Lab không cho sửa các trường này ở nha khoa đã liên kết CRM.
 const TRUONG_TU_CRM = {
   hoVaTen: "ten",
-  soDienThoai: "soDienThoai",
-  email: "email",
-  diaChiCuThe: "diaChi",
-  tinh: "tinh",
 };
 
 class LoiNhaKhoaCrm extends Error {

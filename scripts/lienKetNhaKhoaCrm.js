@@ -1,5 +1,5 @@
 // Liên kết nha khoa có sẵn bên lab với khách hàng CRM (gán NhaKhoa.maCrm) và
-// lấy tên, SĐT, email, địa chỉ, tỉnh từ CRM (trường trống bên CRM không ghi đè).
+// lấy tên nha khoa theo CRM.
 //
 // Ghép theo thứ tự:
 //  1. khách hàng CRM mã "LAB-<id nha khoa>" (CRM tạo từ lab trước đây)
