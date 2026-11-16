@@ -1,8 +1,9 @@
-const mongoose = require("mongoose");
-const NhaKhoa = require("../models/NhaKhoa");
 const SanPham = require("../models/SanPham");
 const BangGia = require("../models/BangGia");
+const NhaKhoa = require("../models/NhaKhoa");
+const DonHang = require("../models/DonHang");
 const { chuanHoaTen } = require("../utils/chuanHoaTen");
+const { timNhaKhoa, dongBoNhaKhoaTuCrm, LoiNhaKhoaCrm } = require("../utils/nhaKhoaTuCrm");
 
 const MAX_ITEMS = 1000;
 
@@ -45,15 +46,15 @@ exports.layBangGiaChung = async (req, res) => {
 // Chỉ thêm/ghi đè giá riêng, không xoá giá riêng nào đang có.
 //
 // POST /api/tich-hop/bang-gia
-// Body: { maKhachHang: "LAB-<id nha khoa>", ten: "<tên>",
+// Body: { crmId: "<id khách hàng CRM>", maKhachHang: "<mã KH>", ten: "<tên>",
 //         giaRieng: [{ sanPham: "<tên sản phẩm>", donGia: 1200000 }] }
 //
-// Nha khoa tìm theo id trong mã "LAB-<id>", không có thì theo tên (phải khớp
-// đúng 1 nha khoa). Sản phẩm khớp theo tên; tên không khớp hoặc trùng nhiều
+// Nha khoa tìm theo crmId (NhaKhoa.maCrm), rồi mã "LAB-<id>", rồi tên (phải
+// khớp đúng 1 nha khoa chưa liên kết), xem utils/nhaKhoaTuCrm.js. Sản phẩm khớp theo tên; tên không khớp hoặc trùng nhiều
 // sản phẩm được trả về trong khongKhop.
 exports.nhanBangGiaTuCrm = async (req, res) => {
   try {
-    const { maKhachHang, ten, giaRieng } = req.body || {};
+    const { crmId, maKhachHang, ten, giaRieng } = req.body || {};
     const hopLe =
       Array.isArray(giaRieng) &&
       giaRieng.length > 0 &&
@@ -70,7 +71,7 @@ exports.nhanBangGiaTuCrm = async (req, res) => {
       return res.status(400).json({ message: "Danh sách giá riêng không hợp lệ" });
     }
 
-    const nhaKhoa = await timNhaKhoa(maKhachHang, ten);
+    const nhaKhoa = await timNhaKhoa({ crmId, maKhachHang, ten });
     if (!nhaKhoa) {
       return res.status(404).json({ message: "Phần mềm lab không tìm thấy nha khoa này" });
     }
@@ -123,16 +124,43 @@ exports.nhanBangGiaTuCrm = async (req, res) => {
   }
 };
 
-const timNhaKhoa = async (maKhachHang, ten) => {
-  const id = typeof maKhachHang === "string" && maKhachHang.startsWith("LAB-") ? maKhachHang.slice(4) : null;
-  if (id && mongoose.isValidObjectId(id)) {
-    const theoId = await NhaKhoa.findById(id).select("_id").lean();
-    if (theoId) return theoId;
+// CRM gửi 1 khách hàng sang: nút "Gửi sang lab" (tạo nếu chưa có), hoặc tự
+// động sau khi sửa khách hàng (chiCapNhat = true: chỉ cập nhật nha khoa đã có,
+// không tạo mới cho khách hàng chưa từng gửi đơn). Gọi lại nhiều lần vẫn an toàn.
+//
+// POST /api/tich-hop/nha-khoa
+// Body: { crmId, maKhachHang, ten, soDienThoai?, email?, diaChi?, tinh?, chiCapNhat? }
+// Trả về: { id, daTao } (id = null nếu chiCapNhat mà lab chưa có nha khoa này)
+exports.nhanNhaKhoaTuCrm = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const { nhaKhoa, daTao } = await dongBoNhaKhoaTuCrm(body, { taoMoi: body.chiCapNhat !== true });
+    res.status(daTao ? 201 : 200).json({ id: nhaKhoa ? nhaKhoa._id.toString() : null, daTao });
+  } catch (err) {
+    if (err instanceof LoiNhaKhoaCrm) return res.status(err.status).json({ message: err.message });
+    console.error("Lỗi nhận nha khoa từ CRM:", err);
+    res.status(500).json({ message: "Phần mềm lab bị lỗi khi lưu nha khoa" });
   }
-  if (typeof ten !== "string" || !ten.trim()) return null;
+};
 
-  const tenCanTim = chuanHoaTen(ten);
-  const danhSach = await NhaKhoa.find().select("hoVaTen").lean();
-  const khop = danhSach.filter((nk) => chuanHoaTen(nk.hoVaTen || "") === tenCanTim);
-  return khop.length === 1 ? khop[0] : null;
+// CRM lấy ngày nhận đơn gần nhất của từng nha khoa (đã liên kết CRM) để hiện
+// số ngày nha khoa chưa gửi đơn. Nha khoa chưa có đơn nào thì không có trong danh sách.
+//
+// GET /api/tich-hop/ngay-don-cuoi
+// Trả về: { nhaKhoa: [{ crmId, ngayDonCuoi }] }
+exports.layNgayDonCuoi = async (req, res) => {
+  try {
+    const danhSach = await DonHang.aggregate([
+      { $match: { nhaKhoa: { $ne: null }, ngayNhan: { $ne: null } } },
+      { $group: { _id: "$nhaKhoa", ngayDonCuoi: { $max: "$ngayNhan" } } },
+      { $lookup: { from: NhaKhoa.collection.name, localField: "_id", foreignField: "_id", as: "nk" } },
+      { $unwind: "$nk" },
+      { $match: { "nk.maCrm": { $type: "string" } } },
+      { $project: { _id: 0, crmId: "$nk.maCrm", ngayDonCuoi: 1 } },
+    ]);
+    res.json({ nhaKhoa: danhSach });
+  } catch (err) {
+    console.error("Lỗi trả ngày đơn cuối cho CRM:", err);
+    res.status(500).json({ message: "Phần mềm lab bị lỗi khi lấy ngày đơn cuối" });
+  }
 };

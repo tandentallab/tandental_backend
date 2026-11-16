@@ -209,6 +209,16 @@ exports.checkPermission = async (req, res, next) => {
         return next(); // Cho phép đọc danh mục hỗ trợ (dropdown/charts)
       }
 
+      // Người tạo đơn được lấy nha khoa từ CRM về khi nha khoa chưa có bên lab
+      if (
+        req.method === "POST" &&
+        baseUrl === "/api/nhakhoa" &&
+        req.path === "/tu-crm" &&
+        permissions.includes("/don-hang")
+      ) {
+        return next();
+      }
+
       const hasAccess = mappedPaths.some((p) => permissions.includes(p));
       if (hasAccess) {
         return next();

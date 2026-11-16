@@ -1,5 +1,7 @@
-// Gửi toàn bộ nha khoa sang CRM (chỉ tên). Dùng cho lần import đầu tiên, và chạy
-// lại được bất cứ lúc nào để bù các nha khoa gửi lỗi — CRM tự bỏ qua nha khoa đã có.
+// Chỉ dùng khi chuyển dữ liệu cũ: gửi các nha khoa CHƯA liên kết CRM sang CRM
+// (chỉ tên) để CRM tạo khách hàng mã "LAB-<id>". Sau đó chạy
+// scripts/lienKetNhaKhoaCrm.js để liên kết. CRM tự bỏ qua nha khoa đã có.
+// Từ nay nha khoa chỉ được thêm mới bên CRM.
 //
 // Chạy trong thư mục backend: node scripts/dongBoNhaKhoaSangCrm.js
 
@@ -11,8 +13,8 @@ const { guiNhaKhoaSangCrm } = require("../utils/crmNhaKhoa");
 
 const main = async () => {
   await connectDB();
-  const danhSach = await NhaKhoa.find().select("hoVaTen").lean();
-  console.log(`Tìm thấy ${danhSach.length} nha khoa`);
+  const danhSach = await NhaKhoa.find({ maCrm: { $not: { $type: "string" } } }).select("hoVaTen").lean();
+  console.log(`Tìm thấy ${danhSach.length} nha khoa chưa liên kết CRM`);
 
   const ketQua = await guiNhaKhoaSangCrm(danhSach);
   if (!ketQua) {

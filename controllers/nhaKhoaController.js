@@ -3,7 +3,7 @@ const NhaKhoa = require("../models/NhaKhoa");
 const HoaDon = require("../models/HoaDon");
 const DonHang = require("../models/DonHang");
 const { getCongNoTatCaNhaKhoa } = require("../utils/congNo");
-const { guiNhaKhoaSangCrm } = require("../utils/crmNhaKhoa");
+const { TRUONG_TU_CRM, dongBoNhaKhoaTuCrm, layKhachHangCrm, LoiNhaKhoaCrm } = require("../utils/nhaKhoaTuCrm");
 
 
 // ================= CẤU HÌNH DAYJS =================
@@ -14,20 +14,8 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 const VN_TZ = "Asia/Ho_Chi_Minh";
 
-exports.createNhaKhoa = async (req, res) => {
-  try {
-    const data = await NhaKhoa.create(req.body);
-    res.status(201).json(data);
-
-    // Không chờ CRM để việc tạo nha khoa không phụ thuộc CRM. Nha khoa gửi lỗi
-    // được bù bằng scripts/dongBoNhaKhoaSangCrm.js.
-    guiNhaKhoaSangCrm([data]).catch((error) => {
-      console.error(`Lỗi gửi nha khoa ${data._id} sang CRM:`, error);
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+// Không có API tạo nha khoa: nha khoa chỉ được thêm mới bên CRM, lab lấy về
+// khi tạo đơn (taoNhaKhoaTuCrm) hoặc khi CRM gửi sang (/api/tich-hop/nha-khoa).
 
 exports.getAllNhaKhoa = async (req, res) => {
   try {
@@ -59,43 +47,6 @@ exports.getAllNhaKhoa = async (req, res) => {
     res.json(data);
   } catch (err) {
     res.status(500).json({ message: err.message });
-  }
-};
-
-// ================= NHA KHOA LÂU CHƯA GỬI ĐƠN =================
-// Ngưỡng cảnh báo: số ngày (theo lịch VN) kể từ ngày nhận đơn gần nhất
-const NGUONG_NGAY_CHUA_GUI_DON = 10;
-
-exports.getNhaKhoaLauChuaGuiDon = async (req, res) => {
-  try {
-    const homNay = dayjs().tz(VN_TZ).startOf("day");
-    // Đơn cuối nhận trước mốc này => đã >= NGUONG ngày chưa gửi đơn
-    const moc = homNay.subtract(NGUONG_NGAY_CHUA_GUI_DON - 1, "day").toDate();
-
-    const danhSach = await DonHang.aggregate([
-      { $group: { _id: "$nhaKhoa", ngayDonCuoi: { $max: "$ngayNhan" } } },
-      { $match: { _id: { $ne: null }, ngayDonCuoi: { $lt: moc } } },
-      { $lookup: { from: NhaKhoa.collection.name, localField: "_id", foreignField: "_id", as: "nk" } },
-      { $unwind: "$nk" },
-      { $sort: { ngayDonCuoi: 1 } },
-      {
-        $project: {
-          _id: 1,
-          hoVaTen: "$nk.hoVaTen",
-          tenGiaoDich: "$nk.tenGiaoDich",
-          ngayDonCuoi: 1,
-        },
-      },
-    ]);
-
-    const data = danhSach.map((item) => ({
-      ...item,
-      soNgay: homNay.diff(dayjs(item.ngayDonCuoi).tz(VN_TZ).startOf("day"), "day"),
-    }));
-
-    res.json({ success: true, nguong: NGUONG_NGAY_CHUA_GUI_DON, data });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -245,9 +196,21 @@ exports.updateNhaKhoa = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // maCrm chỉ do đồng bộ CRM gán. Nha khoa đã liên kết CRM thì các trường
+    // CRM quản lý (tên, SĐT, email, địa chỉ, tỉnh) phải sửa bên CRM.
+    const data = { ...(req.body || {}) };
+    delete data.maCrm;
+    const hienTai = await NhaKhoa.findById(id).select("maCrm").lean();
+    if (!hienTai) {
+      return res.status(404).json({ message: "Không tìm thấy nha khoa" });
+    }
+    if (hienTai.maCrm) {
+      for (const truong of Object.keys(TRUONG_TU_CRM)) delete data[truong];
+    }
+
     const updated = await NhaKhoa.findByIdAndUpdate(
       id,
-      req.body,
+      data,
       {
         returnDocument: 'after', // trả về dữ liệu sau khi update
         runValidators: true, // chạy validate schema
@@ -279,7 +242,16 @@ exports.deleteNhaKhoa = async (req, res) => {
 
     // Chặn xóa nếu nha khoa còn công nợ hoặc còn hóa đơn liên quan,
     // tránh mất dữ liệu lịch sử giao dịch không mong muốn.
-    const soHoaDonLienQuan = await HoaDon.countDocuments({ nhaKhoa: id });
+    const [soHoaDonLienQuan, soDonHangLienQuan] = await Promise.all([
+      HoaDon.countDocuments({ nhaKhoa: id }),
+      DonHang.countDocuments({ nhaKhoa: id }),
+    ]);
+    if (soDonHangLienQuan > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Không thể xóa vì nha khoa này còn ${soDonHangLienQuan} đơn hàng liên quan.`,
+      });
+    }
     if (soHoaDonLienQuan > 0) {
       return res.status(400).json({
         success: false,
@@ -296,5 +268,70 @@ exports.deleteNhaKhoa = async (req, res) => {
     res.json({ success: true, message: "Đã xóa nha khoa thành công", data: deleted });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Tạo đơn mà gõ tên nha khoa chưa có bên lab: tìm khách hàng bên CRM (nơi
+// duy nhất thêm mới nha khoa). Bỏ những khách hàng đã liên kết nha khoa lab.
+//
+// GET /api/nhakhoa/crm?q=<tên>
+exports.timNhaKhoaBenCrm = async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  if (q.length < 2) return res.json([]);
+
+  try {
+    const khachHang = await layKhachHangCrm({ q });
+    if (khachHang === null) {
+      return res.status(503).json({ message: "Chưa cấu hình kết nối CRM" });
+    }
+
+    const daLienKet = new Set(
+      (await NhaKhoa.find({ maCrm: { $type: "string" } }).select("maCrm").lean()).map((nk) => nk.maCrm)
+    );
+    res.json(
+      khachHang
+        .filter((kh) => !daLienKet.has(kh.crmId))
+        .map((kh) => ({
+          crmId: kh.crmId,
+          ten: kh.ten,
+          diaChi: kh.diaChi,
+          soDienThoai: kh.soDienThoai,
+          tinh: kh.tinh,
+          giaiDoan: kh.giaiDoan,
+        }))
+    );
+  } catch (err) {
+    console.error("Lỗi tìm nha khoa bên CRM:", err);
+    res.status(502).json({ message: "Không kết nối được CRM" });
+  }
+};
+
+// Chọn 1 khách hàng CRM khi tạo đơn: lấy lại thông tin từ CRM theo id (không
+// tin dữ liệu gửi từ trình duyệt) rồi tạo (hoặc liên kết) nha khoa bên lab.
+//
+// POST /api/nhakhoa/tu-crm  Body: { crmId }
+exports.taoNhaKhoaTuCrm = async (req, res) => {
+  const crmId = req.body?.crmId;
+  if (typeof crmId !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(crmId)) {
+    return res.status(400).json({ message: "Khách hàng CRM không hợp lệ" });
+  }
+
+  let khachHang;
+  try {
+    khachHang = await layKhachHangCrm({ id: crmId });
+  } catch (err) {
+    console.error("Lỗi lấy khách hàng từ CRM:", err);
+    return res.status(502).json({ message: "Không kết nối được CRM" });
+  }
+  if (khachHang === null) return res.status(503).json({ message: "Chưa cấu hình kết nối CRM" });
+  if (khachHang.length === 0) return res.status(404).json({ message: "CRM không còn khách hàng này" });
+
+  try {
+    const { nhaKhoa, daTao } = await dongBoNhaKhoaTuCrm(khachHang[0], { taoMoi: true });
+    res.status(daTao ? 201 : 200).json(nhaKhoa);
+  } catch (err) {
+    if (err instanceof LoiNhaKhoaCrm) return res.status(err.status).json({ message: err.message });
+    console.error("Lỗi tạo nha khoa từ CRM:", err);
+    res.status(500).json({ message: "Lỗi tạo nha khoa từ CRM" });
   }
 };

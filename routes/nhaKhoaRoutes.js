@@ -2,20 +2,20 @@ const express = require("express");
 const router = express.Router();
 
 const {
-  createNhaKhoa,
   getAllNhaKhoa,
   updateNhaKhoa,
   deleteNhaKhoa,
   updateSoDuDauKy,
   upsertGhiChu,
-  getNhaKhoaLauChuaGuiDon
+  timNhaKhoaBenCrm,
+  taoNhaKhoaTuCrm
 } = require("../controllers/nhaKhoaController");
 
 const { verifyToken, checkPermission } = require("../middleware/authMiddleware");
 
-router.post("/", verifyToken, checkPermission, createNhaKhoa);
 router.get("/", verifyToken, checkPermission, getAllNhaKhoa);
-router.get("/lau-chua-gui-don", verifyToken, checkPermission, getNhaKhoaLauChuaGuiDon);
+router.get("/crm", verifyToken, checkPermission, timNhaKhoaBenCrm);
+router.post("/tu-crm", verifyToken, checkPermission, taoNhaKhoaTuCrm);
 router.put('/:id/so-du-dau-ky', updateSoDuDauKy);
 router.put("/:id/ghi-chu", verifyToken, checkPermission, upsertGhiChu);
 router.put("/:id", verifyToken, checkPermission, updateNhaKhoa)
