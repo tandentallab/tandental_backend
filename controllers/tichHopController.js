@@ -21,7 +21,7 @@ const DON_VI_THEO_LOAI_TINH = {
 // GET /api/tich-hop/san-pham
 exports.layBangGiaChung = async (req, res) => {
   try {
-    const sanPhams = await SanPham.find()
+    const sanPhams = await SanPham.find({ khongDongBoCrm: { $ne: true } })
       .select("tenSanPham donGiaChung loaiTinh nhomSanPham baoHanhMacDinh")
       .sort({ nhomSanPham: 1, tenSanPham: 1 })
       .lean();

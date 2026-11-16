@@ -37,6 +37,11 @@ const sanPhamSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        // true = không gửi sản phẩm này sang CRM khi CRM bấm đồng bộ bảng giá
+        khongDongBoCrm: {
+            type: Boolean,
+            default: false,
+        },
         nhomSanPham: {
             type: String,
             enum: {

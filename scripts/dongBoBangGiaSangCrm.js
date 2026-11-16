@@ -38,7 +38,7 @@ const main = async () => {
   const [danhSachGia, danhSachNhaKhoa, danhSachSanPham] = await Promise.all([
     BangGia.find().select("nhaKhoaId sanPhamId donGia").lean(),
     NhaKhoa.find().select("hoVaTen").lean(),
-    SanPham.find().select("tenSanPham").lean(),
+    SanPham.find({ khongDongBoCrm: { $ne: true } }).select("tenSanPham").lean(),
   ]);
   const nhaKhoaTheoId = new Map(danhSachNhaKhoa.map((nk) => [nk._id.toString(), nk]));
   const tenSanPham = new Map(danhSachSanPham.map((sp) => [sp._id.toString(), sp.tenSanPham]));
@@ -46,7 +46,7 @@ const main = async () => {
   const giaTheoNhaKhoa = new Map();
   for (const gia of danhSachGia) {
     const ten = tenSanPham.get(gia.sanPhamId.toString());
-    if (!ten) continue; // sản phẩm đã bị xoá
+    if (!ten) continue; // sản phẩm đã bị xoá hoặc không đồng bộ sang CRM
     const key = gia.nhaKhoaId.toString();
     if (!giaTheoNhaKhoa.has(key)) giaTheoNhaKhoa.set(key, []);
     giaTheoNhaKhoa.get(key).push({ sanPham: ten, donGia: gia.donGia });
