@@ -4,6 +4,7 @@ const NguoiLienHe = require("../models/NguoiLienHe");
 const NhaKhoa = require("../models/NhaKhoa");
 const PhieuBaoHanh = require("../models/PhieuBaoHanh");
 const SanPham = require("../models/SanPham");
+const { timDongVeGia0, guiThongBaoGia0SangCrm } = require("../utils/crmThongBaoGia0");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 const timezone = require("dayjs/plugin/timezone");
@@ -622,7 +623,7 @@ exports.updateDonHang = async (req, res) => {
 
         // Lấy đơn hàng hiện tại để kiểm tra trạng thái khoá và so sánh thay đổi
         const donHangHienTai = await DonHang.findById(req.params.id)
-            .select("trangThai daXuatHoaDon ngayNhan yeuCauHoanThanh henGiao bacSi chiDinhBacSi ghiChuChung ghiChuTaiChinh ghiChuSanXuat lyDoHenLai danhSachSanPham danhSachPhuKien")
+            .select("nhaKhoa trangThai daXuatHoaDon ngayNhan yeuCauHoanThanh henGiao bacSi chiDinhBacSi ghiChuChung ghiChuTaiChinh ghiChuSanXuat lyDoHenLai danhSachSanPham danhSachPhuKien")
             .lean();
         if (!donHangHienTai) {
             return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
@@ -666,6 +667,11 @@ exports.updateDonHang = async (req, res) => {
             }
         }
 
+        // Dòng sản phẩm bị sửa từ đơn giá > 0 thành = 0 → báo sang CRM sau khi lưu
+        const dongVeGia0 = "danhSachSanPham" in updateData
+            ? await timDongVeGia0(donHangHienTai.danhSachSanPham, updateData.danhSachSanPham, updateData.nhaKhoa || donHangHienTai.nhaKhoa)
+            : [];
+
         // Xây dựng mô tả chi tiết những gì đã thay đổi
         const chiTietThayDoi = await buildChinhSuaLog(donHangHienTai, updateData);
 
@@ -707,6 +713,18 @@ exports.updateDonHang = async (req, res) => {
 
         if (!updatedDonHang) {
             return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
+        }
+
+        if (dongVeGia0.length > 0) {
+            // Không chờ CRM: lỗi gửi thông báo không được làm hỏng việc lưu đơn
+            guiThongBaoGia0SangCrm({
+                thoiGian: new Date().toISOString(),
+                nguoiSua: req.user?.HoTenNV || nhatKyLogEntry?.nguoiThuc || "Không rõ",
+                maDonHang: updatedDonHang.maDonHang || "",
+                benhNhan: updatedDonHang.benhNhan?.hoVaTen || "",
+                nhaKhoa: updatedDonHang.nhaKhoa?.hoVaTen || "",
+                thayDoi: dongVeGia0,
+            }).catch((err) => console.error("Gửi thông báo đơn giá 0 sang CRM thất bại:", err.message));
         }
 
         // Query phiếu bảo hành từ collection
