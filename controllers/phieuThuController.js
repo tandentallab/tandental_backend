@@ -2,6 +2,25 @@ const PhieuThu = require("../models/PhieuThu");
 const HoaDon = require("../models/HoaDon");
 const mongoose = require("mongoose");
 
+// Danh sách chỉ trả các field bảng/xuất Excel cần. Chi tiết hóa đơn được
+// lazy-load qua GET /phieu-thu/:id khi người dùng mở một phiếu.
+const LIST_FIELDS = {
+  soPhieuThu: 1,
+  nhaKhoa: 1,
+  ngayThu: 1,
+  soTienThu: 1,
+  duocKhauTru: 1,
+  conThua: 1,
+  noiDung: 1,
+  phuongThucThanhToan: 1,
+  createdAt: 1,
+  soLuongHoaDon: { $size: { $ifNull: ["$danhSachHoaDon", []] } },
+  nhaKhoaInfo: 1,
+  nguoiTaoInfo: 1,
+};
+
+const NHA_KHOA_LIST_FIELDS = { hoVaTen: 1, tenGiaoDich: 1 };
+
 /* ================= LẤY DANH SÁCH PHIẾU THU ================= */
 exports.getAllPhieuThu = async (req, res) => {
   try {
@@ -31,34 +50,56 @@ exports.getAllPhieuThu = async (req, res) => {
       pipeline.push({ $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limit });
     }
 
-    // 🔥 LOGIC LẤY THÔNG TIN NHA KHOA ĐÃ ĐƯỢC TỐI ƯU SIÊU TỐC
     pipeline.push(
-      // 1. Ưu tiên: Lookup trực tiếp từ trường nhaKhoa (Rất nhanh)
-      { $lookup: { from: "nhakhoas", localField: "nhaKhoa", foreignField: "_id", as: "nhaKhoaDirect" } },
-
-      // 2. Dự phòng: Cho các phiếu thu cũ chưa có trường nhaKhoa (Đi đường vòng qua HoaDon)
-      { $addFields: { _hoaDonIds: "$danhSachHoaDon.hoaDon" } },
-      { $lookup: { from: "hoadons", localField: "_hoaDonIds", foreignField: "_id", as: "hoaDonInfoList" } },
-      { $addFields: { hoaDonInfo: { $arrayElemAt: ["$hoaDonInfoList", 0] } } },
-      { $lookup: { from: "nhakhoas", localField: "hoaDonInfo.nhaKhoa", foreignField: "_id", as: "nhaKhoaFallback" } },
-
-      // 3. Hợp nhất: Nếu có nhaKhoa trực tiếp thì xài, không thì xài dự phòng
+      // 1. Ưu tiên: lookup trực tiếp từ trường nhaKhoa
+      {
+        $lookup: {
+          from: "nhakhoas",
+          localField: "nhaKhoa",
+          foreignField: "_id",
+          pipeline: [{ $project: NHA_KHOA_LIST_FIELDS }],
+          as: "nhaKhoaDirect",
+        },
+      },
+      // 2. Dự phòng cho phiếu thu cũ chưa có nhaKhoa: chỉ đọc field nhaKhoa của hóa đơn đầu tiên
+      {
+        $lookup: {
+          from: "hoadons",
+          let: {
+            hdId: {
+              $cond: [
+                { $gt: [{ $size: "$nhaKhoaDirect" }, 0] },
+                null,
+                { $arrayElemAt: [{ $ifNull: ["$danhSachHoaDon.hoaDon", []] }, 0] },
+              ],
+            },
+          },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$hdId"] } } },
+            { $project: { nhaKhoa: 1 } },
+            {
+              $lookup: {
+                from: "nhakhoas",
+                localField: "nhaKhoa",
+                foreignField: "_id",
+                pipeline: [{ $project: NHA_KHOA_LIST_FIELDS }],
+                as: "nk",
+              },
+            },
+            { $unwind: "$nk" },
+            { $replaceRoot: { newRoot: "$nk" } },
+          ],
+          as: "nhaKhoaFallback",
+        },
+      },
       {
         $addFields: {
-          nhaKhoaInfoArr: {
-            $cond: {
-              if: { $gt: [{ $size: "$nhaKhoaDirect" }, 0] },
-              then: "$nhaKhoaDirect",
-              else: "$nhaKhoaFallback"
-            }
-          }
-        }
+          nhaKhoaInfo: {
+            $ifNull: [{ $arrayElemAt: ["$nhaKhoaDirect", 0] }, { $arrayElemAt: ["$nhaKhoaFallback", 0] }],
+          },
+        },
       },
-      { $unwind: { path: "$nhaKhoaInfoArr", preserveNullAndEmptyArrays: true } },
-      { $addFields: { nhaKhoaInfo: "$nhaKhoaInfoArr" } }, // Gán lại đúng tên biến để code bên dưới của bạn chạy
-
-      // 4. Xóa rác cho nhẹ payload
-      { $project: { nhaKhoaDirect: 0, nhaKhoaFallback: 0, nhaKhoaInfoArr: 0 } }
+      { $project: { nhaKhoaDirect: 0, nhaKhoaFallback: 0 } }
     );
 
     // NhaKhoa filter
@@ -67,7 +108,15 @@ exports.getAllPhieuThu = async (req, res) => {
     }
 
     pipeline.push(
-      { $lookup: { from: "staffs", localField: "nguoiTao", foreignField: "_id", as: "nguoiTaoInfo" } },
+      {
+        $lookup: {
+          from: "staffs",
+          localField: "nguoiTao",
+          foreignField: "_id",
+          pipeline: [{ $project: { HoTenNV: 1, hoVaTen: 1 } }], // không trả Password ra client
+          as: "nguoiTaoInfo",
+        },
+      },
       { $unwind: { path: "$nguoiTaoInfo", preserveNullAndEmptyArrays: true } },
     );
 
@@ -85,37 +134,11 @@ exports.getAllPhieuThu = async (req, res) => {
 
     if (!canPaginateBeforeLookups) pipeline.push({ $sort: { createdAt: -1 } });
 
-    // Enrich danhSachHoaDon with full hoaDon details
     const countPipeline = [...pipeline, { $count: "total" }];
     const dataPipeline = [
       ...pipeline,
       ...(canPaginateBeforeLookups ? [] : [{ $skip: skip }, { $limit: limit }]),
-      {
-        $addFields: {
-          danhSachHoaDon: {
-            $map: {
-              input: { $ifNull: ["$danhSachHoaDon", []] },
-              as: "item",
-              in: {
-                soTienThanhToan: "$$item.soTienThanhToan",
-                daTTruocLanNay: "$$item.daTTruocLanNay",
-                hoaDon: {
-                  $arrayElemAt: [
-                    {
-                      $filter: {
-                        input: { $ifNull: ["$hoaDonInfoList", []] },
-                        as: "hd",
-                        cond: { $eq: ["$$hd._id", "$$item.hoaDon"] },
-                      },
-                    },
-                    0,
-                  ],
-                },
-              },
-            },
-          },
-        },
-      },
+      { $project: LIST_FIELDS },
     ];
 
     const [total, data] = await Promise.all([
@@ -392,27 +415,30 @@ exports.getPhieuThuById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const hoaDonPopulate = [
-      { path: "nhaKhoa", select: "hoVaTen tenGiaoDich soDienThoai email moTa diaChiCuThe quanHuyen tinh quocGia" },
-      {
-        path: "danhSachSanPham.donHang",
-        select: "bacSi benhNhan",
-        populate: [
-          { path: "bacSi", select: "hoVaTen" },
-          { path: "benhNhan", select: "hoVaTen soDienThoai" },
-        ],
-      },
-    ];
+    const NHA_KHOA_DETAIL = "hoVaTen tenGiaoDich soDienThoai email moTa diaChiCuThe quanHuyen tinh quocGia";
 
     const phieuThu = await PhieuThu.findById(id)
-      .populate({ path: "danhSachHoaDon.hoaDon", populate: hoaDonPopulate })
-      .populate("nguoiTao", "hoVaTen HoTenNV");
+      .populate({
+        path: "danhSachHoaDon.hoaDon",
+        select: "soHoaDon ngayXuatHoaDon createdAt nhaKhoa giaTriThanhToan daThanhToan conLai trangThai",
+        populate: { path: "nhaKhoa", select: NHA_KHOA_DETAIL },
+      })
+      .populate("nguoiTao", "hoVaTen HoTenNV")
+      .lean();
 
     if (!phieuThu) {
       return res.status(404).json({ success: false, message: "Không tìm thấy phiếu thu" });
     }
 
-    res.json({ success: true, data: phieuThu });
+    // Cùng shape với API danh sách để panel/modal dùng chung
+    const nhaKhoaInfo = phieuThu.nhaKhoa
+      ? await mongoose.model("NhaKhoa").findById(phieuThu.nhaKhoa).select(NHA_KHOA_DETAIL).lean()
+      : phieuThu.danhSachHoaDon?.[0]?.hoaDon?.nhaKhoa || null;
+
+    res.json({
+      success: true,
+      data: { ...phieuThu, nhaKhoaInfo, nguoiTaoInfo: phieuThu.nguoiTao || null },
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
