@@ -1,6 +1,13 @@
 const PhieuNhapKho = require("../models/PhieuNhapKho");
 const VatLieu = require("../models/VatLieu");
 const NhaCungCap = require("../models/NhaCungCap");
+const dayjs = require("dayjs");
+const utc = require("dayjs/plugin/utc");
+const timezone = require("dayjs/plugin/timezone");
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+const TZ = "Asia/Ho_Chi_Minh";
 
 function escapeRegex(str) {
     return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -99,12 +106,9 @@ exports.getAll = async (req, res) => {
 
         if (req.query.tuNgay || req.query.denNgay) {
             filter.ngayTao = {};
-            if (req.query.tuNgay) filter.ngayTao.$gte = new Date(req.query.tuNgay);
-            if (req.query.denNgay) {
-                const den = new Date(req.query.denNgay);
-                den.setHours(23, 59, 59, 999);
-                filter.ngayTao.$lte = den;
-            }
+            // Tính theo ngày giờ Việt Nam để Tổng khớp với Chi phí vật liệu của báo cáo tổng hợp
+            if (req.query.tuNgay) filter.ngayTao.$gte = dayjs.tz(req.query.tuNgay, TZ).startOf("day").toDate();
+            if (req.query.denNgay) filter.ngayTao.$lte = dayjs.tz(req.query.denNgay, TZ).endOf("day").toDate();
         }
 
         const total = await PhieuNhapKho.countDocuments(filter);

@@ -228,17 +228,27 @@ exports.xoaChiPhi = async (req, res) => {
     }
 };
 
-// Dòng chi phí lương của báo cáo tổng hợp: ưu tiên số liệu từ CRM; tháng CRM chưa
-// có kỳ lương (hoặc chưa cấu hình CRM) thì dùng bảng BangLuong cũ.
+// Kỳ lương cuối cùng tính bằng Bảng lương nội bộ lab — từ kỳ sau mới lấy từ CRM
+const KY_LUONG_NOI_BO_CUOI = { thang: 10, nam: 2026 };
+
+const laKyLuongNoiBo = (thang, nam) =>
+    nam < KY_LUONG_NOI_BO_CUOI.nam ||
+    (nam === KY_LUONG_NOI_BO_CUOI.nam && thang <= KY_LUONG_NOI_BO_CUOI.thang);
+
+// Dòng chi phí lương của báo cáo tổng hợp:
+// - Từ tháng 10/2026 trở về trước: luôn lấy từ Bảng lương nội bộ lab (BangLuong).
+// - Từ tháng 11/2026: ưu tiên CRM; CRM chưa có kỳ lương (hoặc chưa cấu hình CRM) thì dùng BangLuong.
 async function tongHopChiPhiLuong(thang, nam, ngayTao) {
     let duLieuCrm = null;
     let ghiChu = "Lấy từ Bảng lương";
 
-    try {
-        duLieuCrm = await layChiPhiLuongTuCrm(thang, nam);
-    } catch (error) {
-        console.error("Lỗi lấy chi phí lương từ CRM:", error);
-        ghiChu = "Không lấy được từ CRM — đang dùng Bảng lương cũ, số liệu có thể thiếu";
+    if (!laKyLuongNoiBo(thang, nam)) {
+        try {
+            duLieuCrm = await layChiPhiLuongTuCrm(thang, nam);
+        } catch (error) {
+            console.error("Lỗi lấy chi phí lương từ CRM:", error);
+            ghiChu = "Không lấy được từ CRM — đang dùng Bảng lương cũ, số liệu có thể thiếu";
+        }
     }
 
     const dongLuong = {
@@ -296,9 +306,10 @@ exports.layDanhSachChiPhi = async (req, res) => {
         const laAdmin = req.user?.appRole === APP_ROLES.ADMIN;
         const chiPhiLuong = laAdmin ? await tongHopChiPhiLuong(thang, nam, startDate) : null;
 
-        // 3. Tính CHI PHÍ VẬT LIỆU TỰ ĐỘNG TỪ KHO
+        // 3. Tính CHI PHÍ VẬT LIỆU TỰ ĐỘNG TỪ KHO — gồm cả phiếu chưa nhận, để khớp
+        //    với con số Tổng của danh sách Phiếu nhập trong cùng tháng
         const thongKeVatLieu = await PhieuNhapKho.aggregate([
-            { $match: { trangThaiNhap: "Đã nhận", ngayTao: { $gte: startDate, $lte: endDate } } },
+            { $match: { ngayTao: { $gte: startDate, $lte: endDate } } },
             ...pipelineTongChiPhiPhieuNhap
         ]);
 
